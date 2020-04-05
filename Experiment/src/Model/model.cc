@@ -226,9 +226,7 @@ void Experiment::main_loop(std::string experiment_num, bool multi_lane) {
     road.update_car_positions(time_step);
   }
 
-  std::string text = "Hello there";
-  // std::string file_name = "./Experiments/experiment" + experiment_num + ".txt";
-  write_data(text);
-  // write_data(data, max_it, road.get_road_delim_x(), file_name);
+  std::string file_name = "./Experiments/experiment" + experiment_num + ".txt";
+  write_data(data, max_it, road.get_road_delim_x(), file_name);
   // write_space_time_Pbm(&data, file_name);
 }
