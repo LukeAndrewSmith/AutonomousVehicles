@@ -1,16 +1,13 @@
 CC=c++
 CFLAGS=-std=c++11
 
-concertina: concertina.o model.o
-	$(CC) $(CFLAGS) -o concertina concertina.o model.o
-concertina.o: ./src/E1_Concertina/concertina.cc model.o
-	$(CC) $(CFLAGS) -c ./src/E1_Concertina/concertina.cc -I ./src
-
-model.o: ./src/Model/model.hpp ./src/Model/model.cc
-	$(CC) $(CFLAGS) -c ./src/Model/model.cc
+single_lane: single_lane.o
+	$(CC) $(CFLAGS) -o single_lane single_lane.o
+single_lane.o: ./src/Single_Lane/single_lane.cc ./src/Single_Lane/Matrix2D.hpp
+	$(CC) $(CFLAGS) -c ./src/Single_Lane/single_lane.cc
 
 clean:
-	rm *.o concertina
+	rm *.o single_lane
 
 clean_o:
 	rm *.o
