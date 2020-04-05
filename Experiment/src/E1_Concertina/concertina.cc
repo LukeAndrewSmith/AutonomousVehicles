@@ -60,7 +60,7 @@ int main(int argc, char const *argv[]) {
   };
 
   Experiment concertina(init_vals);
-  concertina.main_loop("c_1",false);
+  concertina.main_loop("c_1", false);
 
   return 0;
 }

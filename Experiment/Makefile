@@ -3,23 +3,16 @@ CFLAGS=-std=c++11
 
 E1=./src/E1_Concertina
 MODEL=./src/Model
-MODEL_O= experiment.o road.o car.o
-#
-# concertina: concertina.o $(MODEL_O)
-# 	$(CC) $(CFLAGS) -o concertina concertina.o $(MODEL_O)
-# concertina.o: $(E1)/concertina.cc $(MODEL_O)
-# 	$(CC) $(CFLAGS) -c $(E1)/concertina.cc -I ./src
+DATA=./src/Data_Storage
+VIS=./src/Visualisation
 
-# model.o: ./src/Model/model.hpp ./src/Model/model.cc
-# 	$(CC) $(CFLAGS) -c ./src/Model/model.cc
+concertina: concertina.o model.o
+	$(CC) $(CFLAGS) -o concertina concertina.o model.o
+concertina.o: $(E1)/concertina.cc model.o
+	$(CC) $(CFLAGS) -c $(E1)/concertina.cc -I ./src
 
-experiment.o: $(MODEL)/experiment.hpp $(MODEL)/experiment.cc
-	$(CC) $(CFLAGS) -c $(MODEL)/experiment.cc
-# road.o: $(MODEL)/road.hpp $(MODEL)/road.cc
-# 	$(CC) $(CFLAGS) -c $(MODEL)/road.cc
-# car.o: $(MODEL)/car.hpp $(MODEL)/car.cc
-# 	$(CC) $(CFLAGS) -c $(MODEL)/car.cc
-
+model.o: $(MODEL)/model.hpp $(MODEL)/model.cc $(DATA)/write_data.hpp $(VIS)/visualisation.hpp
+	$(CC) $(CFLAGS) -c $(MODEL)/model.cc -I $(DATA)
 
 clean:
 	rm *.o concertina
