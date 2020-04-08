@@ -1,9 +1,19 @@
+//
+//  lane_merge.cc
+//  Autonomous-Vehicles
+//
+//  Created by Luke Smith on 08.04.20.
+//  Copyright © 2020 Luke Smith. All rights reserved.
+//
+
+// HELLO FILE SYSTEM
 #include <iostream>
 #include <tuple>
 #include <vector>
 #include <cmath>
 #include "model.hpp"
 #include "write_data.hpp"
+
 
 /*----------------------------------------------------------------------------*/
 /*                         Experiment Parameters                              */
@@ -39,7 +49,6 @@ void Car::update_decision(Road* road) {
   // ATTEMPT WITH ALL CARS FROM STOP START
   // EASIER TO VISUALISE FROM STAND STILL
 
-// Returns the number of the experiment
 int main(int argc, char const *argv[]) {
 
   init_experiment init_vals = { // See model.hpp for definition
@@ -65,8 +74,7 @@ int main(int argc, char const *argv[]) {
 
   Experiment concertina(init_vals);
   std::string dir = "./Experiments/concertina";
-  int experiment_num;
-    std::string experiment_name = get_file_name(dir,&experiment_num);
+  std::string experiment_name = get_file_name(dir);
   std::string experiment_file_name = dir + "/" + experiment_name;
   concertina.main_loop(experiment_file_name, false);
 

@@ -10,6 +10,7 @@ class Road; // Forward decleration of road as it is needed for 'update_decision(
 
 class Car {
 private:
+  int id;
   float velocity; // [m/s]
   float max_velocity;
   float x_pos; // [m]
@@ -25,11 +26,12 @@ private:
   float max_delta_turning_angle;
   std::vector<bool> indicators;
 public:
-  Car(float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_length, float init_horizon, float init_max_delta_turning_angle);
+  Car(int id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_length, float init_horizon, float init_max_delta_turning_angle);
   void update_decision(Road* road);
-  void update_position(float time_step, int road_delim_x);
+  void update_position(float time_step, int road_delim_x, int refill_protocol);
   float get_x_pos();
   float get_y_pos();
+  float get_length();
 };
 
 
@@ -42,11 +44,13 @@ Explanation of Road
 class Road {
 private:
   int road_delim_x; // Indicates end of road, we assume start = 0
-  std::vector<float> lanes;
+  int n_lanes;
   std::vector<Car> cars;
+  float begin_lane_merge; // Indicates at what position lane merging should begin
+  int inlet_protocol;
 public:
   Road();
-  Road(float init_road_delim_x, std::vector<float> init_lanes);
+  Road(float init_road_delim_x, int init_n_lanes, int inlet_protocol);
   float get_car_ahead_pos(float my_x_pos);
   float get_car_behind_pos(float my_x_pos);
   // std::vector<float> get_car_ahead_pos_otherlane();
@@ -77,12 +81,12 @@ struct init_experiment {
   float init_max_delta_turning_angle;
   // Road
   float init_road_delim_x;
-  std::vector<float> init_lanes;
+  int init_n_lanes;
+  int init_inlet_protocol;
+    // TODO: Lane merging sign
   // Experiment
-    // Initialise cars and indicate refill protocol (how cars are input into the system)
   std::vector<int> init_n_cars_per_lane; // n_cars_per_lane[0] = #cars in lane at lanes[0]
   int init_spacing_protocol;
-  int init_refill_protocol;
   int init_max_it;
   float init_time_step;
 };
@@ -94,7 +98,6 @@ private:
   Road road;
   std::vector<int> n_cars_per_lane;
   int spacing_protocol; // Initial position of the cars (densly packed or not)
-  int refill_protocol; // How to intput INLET_PROTOCOL
   int max_it; // Number of iterations
   float time_step; // Time passed in each iteration (should be small as we have made small angle approximations)
 
