@@ -6,27 +6,39 @@
 #  Created by Luke Smith on 08.04.20.
 #  Copyright © 2020 Luke Smith. All rights reserved.
 
+make concertina
 
-./concertina
 # Values for init_experiment init_vals, See model.hpp for definition
-# Car (tesla model 3)
-  std::vector<float>(20,30)#{33,32,31,30,29,28,27,25,24,23,22,21,20,22,22} # std::vector<float> init_velocity; # TODO: Won't work for multi-lane
-  33                    # float init_max_velocity;
-  0                     # float init_accel_param;
-  0.14                  # float init_max_accel_param;
-  -0.69                 # float init_min_accel_param;
-  4.69                  # float init_length;
-  100                   # float horizon;
-  1                     # float init_max_delta_turning_angle;
-  # Road
-  10000                 # float init_road_delim_x;
-  1                     # int init_n_lanes;
-  1                     # int init_inlet_protocol; # 0 = none, 1 = loop, 2 = new cars
-  # Experiment
-  20,0  # std::vector<int> init_n_cars_per_lane; # n_cars_per_lane[0] = #cars in lane at lanes[0] // TODO: make sure inputworks
-  10                    # int init_spacing_protocol; # TODO: Rename? Currently used as distance between cars
-  10000                 # int init_max_it;
-  0.01                   # float init_time_step;
+    # Car values based on # Car (tesla model 3)
+# Car
+VELOCITY=0                  # float init_velocity       // All car begin with the same velocity
+MAX_VELOCITY=70             # float init_max_velocity   // 70 m/s =~ 250 km/h
+ACCEL_PARAM=0               # float init_accel_param
+MAX_ACCEL_PARAM=0.5#0.14        # float init_max_accel_param
+MIN_ACCEL_PARAM=-0.5#-0.69       # float init_min_accel_param
+CAR_LENGTH=4.69             # float init_car_length
+HORIZON=100                 # float horizon             // UNUSED HERE AS ONLY 1 LANE
+MAX_DELTA_TURNING_ANGLE=1   # float init_max_delta_turning_angle
+# Road
+ROAD_LENGTH=0           # float init_road_length
+SPEED_LIMIT=33              # float init_road_length    // 33 m/s =~ 120km/h
+N_LANES=1                   # int init_n_lanes
+# BEGIN_EVENT below as uses variables not yet declared
+# Experiment
+N_CARS_PER_LANE=2          # int init_n_cars_per_lane  // All lanes begin with the same number of cars
+CAR_SPACING=10 #$(( 2*$VELOCITY ))              # int init_car_spacing
+MAX_IT=0                    # int init_max_it
+TIME_STEP=0.01              # float init_time_step
 
+BEGIN_EVENT=$(( ($N_CARS_PER_LANE+1)*$CAR_SPACING ))            # float begin_event
+BEGIN_EVENT=-1 # No event
 
-magick convert ./Experiments/concertina/experiment_3.pbm experiment_3.png
+./concertina $VELOCITY $MAX_VELOCITY $ACCEL_PARAM $MAX_ACCEL_PARAM $MIN_ACCEL_PARAM $CAR_LENGTH $HORIZON $MAX_DELTA_TURNING_ANGLE $ROAD_LENGTH $SPEED_LIMIT $N_LANES $BEGIN_EVENT $N_CARS_PER_LANE $CAR_SPACING $MAX_IT $TIME_STEP
+
+EXP_NUM=$? # Get the return value = experiment_num, 0 => failure (not conventional but there we go)
+if [ $EXP_NUM > 0 ]
+then
+    magick convert ./Experiments/concertina/experiment_$EXP_NUM.pbm ./Experiments/concertina/experiment_$EXP_NUM.png # Convert to png as pbm files become massive, but they are much easier to write from c++
+    rm ./Experiments/concertina/experiment_$EXP_NUM.pbm
+    echo "Concertina experiment "$EXP_NUM": Completed Succesfully"
+fi

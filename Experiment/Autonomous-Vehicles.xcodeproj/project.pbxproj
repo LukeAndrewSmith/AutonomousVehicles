@@ -27,6 +27,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0719995424545EF3005D9DD7 /* lane_merge.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = lane_merge.sh; sourceTree = "<group>"; };
+		07199955245476C3005D9DD7 /* gif.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = gif.hpp; sourceTree = "<group>"; };
 		07343871243A6DD2006386BC /* Autonomous-Vehicles */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "Autonomous-Vehicles"; sourceTree = BUILT_PRODUCTS_DIR; };
 		0790E182243E00DF00E77959 /* concertina.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = concertina.cc; sourceTree = "<group>"; };
 		0790E184243E00DF00E77959 /* lane_merge.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = lane_merge.cc; sourceTree = "<group>"; };
@@ -59,6 +61,7 @@
 				07F4C526243A6EDB0050E113 /* Experiments */,
 				07F4C529243A6EDB0050E113 /* Makefile */,
 				07D8F653243DF52D00BAD4D3 /* concertina.sh */,
+				0719995424545EF3005D9DD7 /* lane_merge.sh */,
 				07F4C51A243A6EDB0050E113 /* src */,
 				07343872243A6DD2006386BC /* Products */,
 			);
@@ -103,8 +106,8 @@
 		07F4C51D243A6EDB0050E113 /* Data_Storage */ = {
 			isa = PBXGroup;
 			children = (
-				07F4C51E243A6EDB0050E113 /* write_data.hpp */,
 				07F4C51F243A6EDB0050E113 /* write_data.cc */,
+				07F4C51E243A6EDB0050E113 /* write_data.hpp */,
 			);
 			path = Data_Storage;
 			sourceTree = "<group>";
@@ -123,6 +126,7 @@
 			children = (
 				07F4C524243A6EDB0050E113 /* visualisation.hpp */,
 				07F4C525243A6EDB0050E113 /* visualisation.cc */,
+				07199955245476C3005D9DD7 /* gif.hpp */,
 			);
 			path = Visualisation;
 			sourceTree = "<group>";

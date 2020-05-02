@@ -1,19 +1,9 @@
-//
-//  lane_merge.cc
-//  Autonomous-Vehicles
-//
-//  Created by Luke Smith on 08.04.20.
-//  Copyright © 2020 Luke Smith. All rights reserved.
-//
-
-// HELLO FILE SYSTEM
 #include <iostream>
 #include <tuple>
 #include <vector>
 #include <cmath>
 #include "model.hpp"
 #include "write_data.hpp"
-
 
 /*----------------------------------------------------------------------------*/
 /*                         Experiment Parameters                              */
@@ -22,61 +12,92 @@
 update_decision
 TODO: Explanation
 */
-void Car::update_decision(Road* road) {
-  float car_ahead_pos = road->get_car_ahead_pos(x_pos);
-  float safety_distance = 2*velocity; // 2[s] * speed in [m/s]
-  float diff = car_ahead_pos-x_pos;
-    if ( ( id == 0 ) && (x_pos > road->get_road_delim_x()/2) && (x_pos < (road->get_road_delim_x()/2)+30 ) ) { // (x_pos == road->get_road_delim_x()/2) ) {
-        accel_param = min_accel_param;
-    } else if ( diff < safety_distance ) { // TODO: Smoother braking
-        accel_param = -velocity/diff;
-        accel_param = std::max(min_accel_param,accel_param);
-        // accel_param = (1-((2*diff)/safety_distance))*min_accel_param; // TEST 1: reduce by proportion of min_accel_param
-        // accel_param = std::max(min_accel_param,accel_param);
-
-    } else { // TODO: Implement Accelerating to max road speed: new argument max_road_speed
-        accel_param = (1-(velocity/max_velocity))*max_accel_param;
-//        accel_param = 0;
-
+int Car::update_decision(Road* road, float time_step) {
+    float car_ahead_pos = road->get_car_ahead_pos(x_pos);
+    float safety_distance = 2*velocity; // 2[s] * speed in [m/s]
+    float diff = car_ahead_pos-x_pos;
+    if ( x_pos < road->get_begin_event() ) {   // Before Lane Merging
+        if ( diff < safety_distance ) { // TODO: Smoother braking
+            accel_param = -velocity/diff;
+            accel_param = std::max(min_accel_param,accel_param);
+        } else { // TODO: Implement Accelerating to max road speed: new argument max_road_speed
+            accel_param = (1-(velocity/max_velocity))*max_accel_param;
+        }
+    } else if ( x_pos >= road->get_begin_event() && y_pos < 1 ) {  // Begin Lane Merging
+        y_target = 1;
+        float psi = atan( (y_target-y_pos)/(horizon - (car_length*cos(road_angle))) ) - road_angle;
+        float check = psi-turning_angle;
+        if ( check < -max_delta_turning_angle ) {
+            turning_angle = turning_angle - max_delta_turning_angle;
+        } else if ( abs(check) < max_delta_turning_angle ) {
+            turning_angle = psi;
+        } else if ( check > max_delta_turning_angle ) {
+            turning_angle = turning_angle + max_delta_turning_angle;
+        }
+        // TODO: Never actually gets to the other lane, this is cheating a bit
+        if ( y_target-y_pos<0.001 && turning_angle<10e-13 ) {
+            turning_angle = 0;
+            road_angle = 0;
+            y_pos = 1;
+        }
     }
+    return 0;
 }
 
-// CAN HAVE MULTIPLE EXPERIMENTS IN THE THE EXPERIMENTS FILE SO THAT YOU CAN
-// CHECK PREVIOUS EXPERIMENTS
-// IF DEFS CAN BE USEFUL FOR 'LOGGING MODE' WHERE PRINT STATEMENTS ARE ENCAPSULATED
-
-// NOTE FOR FINAL MERGING EXPRIMENT:
-  // ATTEMPT WITH ALL CARS FROM STOP START
-  // EASIER TO VISUALISE FROM STAND STILL
-
+// Returns the number of the experiment
 int main(int argc, char const *argv[]) {
-
-  init_experiment init_vals = { // See model.hpp for definition
-    // Car (tesla model 3)
-      std::vector<float>(20,30), //{33,32,31,30,29,28,27,25,24,23,22,21,20,22,22},  // std::vector<float> init_velocity; // TODO: Won't work for multi-lane
-    33,  // float init_max_velocity;
-    0,   // float init_accel_param;
-    0.14,// float init_max_accel_param;
-    -0.69,// float init_min_accel_param;
-    4.69,// float init_length;
-    100, // float horizon;
-    1,   // float init_max_delta_turning_angle;
+    
+    if (argc != 16+1) {
+        std::cout << "Usage: concertina <init_velocity>< <max_velocity> <init_accel_param> <max_accel_param> <min_accel_param> <car_length> <horizon> <max_delta_turning_angle> <road_length> <speed_limit> <n_lanes> <n_cars_per_lane> <car_spacing> <max_it> <time_step>";
+        std::exit(0);
+    }
+    
+    float init_velocity = atof(argv[1]);                    // float init_velocity
+    float init_max_velocity = atof(argv[2]);                // float init_max_velocity;
+    float init_accel_param = atof(argv[3]);                 // float init_accel_param;
+    float init_max_accel_param = atof(argv[4]);             // float init_max_accel_param;
+    float init_min_accel_param = atof(argv[5]);             // float init_min_accel_param;
+    float init_car_length = atof(argv[6]);                      // float init_car_length;
+    float horizon = atof(argv[7]);                          // float horizon;
+    float init_max_delta_turning_angle = atof(argv[8]);     // float init_max_delta_turning_angle;
     // Road
-    10000,                  // float init_road_delim_x;
-    1, // int init_n_lanes;
-    1,                   // int init_inlet_protocol; // 0 = none, 1 = loop, 2 = new cars
+    int init_road_length = atof(argv[9]);                   // float init_road_length;
+    int init_speed_limit = atoi(argv[10]);                  // int init_n_lanes;
+    int init_n_lanes = atoi(argv[11]);                      // int init_n_lanes;
+    float init_begin_event = atof(argv[12]);
     // Experiment
-    std::vector<int>{20}, // std::vector<int> init_n_cars_per_lane; // n_cars_per_lane[0] = #cars in lane at lanes[0]
-    10,                   // int init_spacing_protocol; // TODO: Rename? Currently used as distance between cars
-    10000,                // int init_max_it;
-    0.01,                 // float init_time_step;
-  };
+    float init_n_cars_per_lane = atof(argv[13]);            // int init_n_cars_per_lane;
+    int init_car_spacing = atoi(argv[14]);                  // int init_car_spacing;
+    int init_max_it = atoi(argv[15]);                       // int init_max_it;
+    float init_time_step = atof(argv[16]);                  // float init_time_step;
+    
+    init_experiment init_vals = {           // See model.hpp for definition
+        init_velocity,                      // float init_velocity
+        init_max_velocity,                  // float init_max_velocity;
+        init_accel_param,                   // float init_accel_param;
+        init_max_accel_param,               // float init_max_accel_param;
+        init_min_accel_param,               // float init_min_accel_param;
+        init_car_length,                        // float init_car_length;
+        horizon,                            // float horizon;
+        init_max_delta_turning_angle,       // float init_max_delta_turning_angle;
+        // Road
+        init_road_length,                   // float init_road_length;
+        init_speed_limit,                   // int init_speed_limit;
+        init_n_lanes,                       // int init_n_lanes;
+        init_begin_event,              // int init_begin_event;
+        // Experiment
+        init_n_cars_per_lane,               // int init_n_cars_per_lane;
+        init_car_spacing,                   // int init_car_spacing;
+        init_max_it,                        // int init_max_it;
+        init_time_step,                     // float init_time_step;
+    };
+    
+    Experiment concertina(init_vals);
+    std::string dir = "./Experiments/lane_change";
+    int experiment_num;
+    std::string experiment_name = get_file_name(dir,&experiment_num);
+    std::string experiment_file_name = dir + "/" + experiment_name;
+    concertina.main_loop(experiment_file_name, init_n_lanes>1, init_begin_event>0);
 
-  Experiment concertina(init_vals);
-  std::string dir = "./Experiments/concertina";
-  std::string experiment_name = get_file_name(dir);
-  std::string experiment_file_name = dir + "/" + experiment_name;
-  concertina.main_loop(experiment_file_name, false);
-
-  return 0;
+    return experiment_num;
 }
