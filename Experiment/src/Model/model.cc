@@ -3,6 +3,7 @@
 #include <vector>
 #include <math.h>
 #include <string>
+#include <queue>
 // #include <limits>
 #include <cfloat>
 #include "model.hpp"
@@ -13,7 +14,7 @@
 /*                                  Car                                       */
 /*----------------------------------------------------------------------------*/
 /* Constructor */
-Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_car_length, float init_horizon, float init_max_delta_turning_angle) {
+Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_car_length, float init_horizon, float init_max_delta_turning_angle, float init_reaction_time, float time_step) {
     id = init_id;
     velocity = init_velocity;
     max_velocity = init_max_velocity;
@@ -30,6 +31,11 @@ Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x
     horizon = init_horizon;
     max_delta_turning_angle = init_max_delta_turning_angle;
     indicators = std::vector<bool>{false, false};
+    reaction_time = init_reaction_time;
+    last_reaction_it = 0;
+    int n_its_delay = init_reaction_time/time_step;
+    for (int i=0; i<n_its_delay; i++) decision_buffer.push(0); // Initialise delay
+    count = 0;
 }
 
 /*
@@ -87,7 +93,6 @@ float Car::get_velocity() {
   // TODO: This doesn't seem very clean to me...
 Road::Road() {}
 
-/* Constructor */
 Road::Road(int init_road_length, int init_speed_limit, int init_n_lanes, float init_begin_event) {
     road_length = init_road_length;
     speed_limit = init_speed_limit;
@@ -95,8 +100,6 @@ Road::Road(int init_road_length, int init_speed_limit, int init_n_lanes, float i
     begin_event = init_begin_event;
 }
 
-/*
-*/
 float Road::get_car_ahead_pos(float my_x_pos) {
     float car_ahead_x_pos = FLT_MAX; // std::numeric_limits<float>::max;
     for (Car c : cars) {
@@ -109,8 +112,6 @@ float Road::get_car_ahead_pos(float my_x_pos) {
     return car_ahead_x_pos;
 }
 
-/*
-*/
 float Road::get_car_behind_pos(float my_x_pos) {
     float x_pos = FLT_MAX; // std::numeric_limits<float>::max;
     for (Car c : cars) {
@@ -135,10 +136,10 @@ float Road::get_car_behind_pos(float my_x_pos) {
 //   return std::vector<float>{0,0};
 // }
 
-int Road::update_car_decisions(float time_step) {
+int Road::update_car_decisions(float time_step, int iteration) {
     int experiment_began = 0;
     for (Car &c : cars) {
-        experiment_began = std::max(c.update_decision(this, time_step), experiment_began);
+        experiment_began = std::max(c.update_decision(this, time_step, iteration), experiment_began);
     }
     return experiment_began;
 }
@@ -154,19 +155,8 @@ void Road::add_car(Car new_car) {
 }
 
 bool Road::cars_at_speed_limit() {
-//    for (Car &c : cars) {
-//        if ( c.get_accel_param() != 0 ) return false;
-//    }
-//    float v = cars.front().get_velocity();
-//    if ( v < speed_limit-0.5 ) return false; // Cars won't necessarily be perfectly at the speed limit but they will be close
-//    for (Car &c : cars) {
-//        if ( c.get_velocity() != v ) return false;
-//    }
-//    float v = cars.front().get_velocity();
-//    if ( v < speed_limit-0.5 ) return false; // Cars won't necessarily be perfectly at the speed limit but they will be close
-    for (Car &c : cars) {
-        if ( abs(c.get_velocity()-speed_limit) > 0.05 ) return false;
-    }
+    if ( abs(cars.front().get_velocity()-speed_limit) > 0.025 ) return false;   // First car
+    if ( abs(cars.back().get_velocity()-speed_limit) > 0.025 ) return false;    // Last car
     return true;
 }
 
@@ -193,7 +183,7 @@ int Road::get_begin_event() {
 /* Constructor */
 Experiment::Experiment(init_experiment init_vals) {
     // Road
-    road = Road(init_vals.init_road_length, init_vals.init_speed_limit, init_vals.init_n_lanes, init_vals.begin_event);
+    road = Road(init_vals.init_road_length, init_vals.init_speed_limit, init_vals.init_n_lanes, init_vals.init_begin_event);
     // Experiment
     n_cars_per_lane = init_vals.init_n_cars_per_lane; // n_cars_per_lane[0] = #cars in lane at lanes[0]
     car_spacing = init_vals.init_car_spacing;
@@ -205,7 +195,7 @@ Experiment::Experiment(init_experiment init_vals) {
         x_pos = 0;
         for (int j=0; j<n_cars_per_lane; j++) {
             int id = n_cars_per_lane-j-1;       // Front car has id 0
-            Car new_car = Car(id, init_vals.init_velocity, init_vals.init_max_velocity, x_pos, float(i), init_vals.init_accel_param, init_vals.init_max_accel_param, init_vals.init_min_accel_param, init_vals.init_car_length, init_vals.horizon, init_vals.init_max_delta_turning_angle);
+            Car new_car = Car(id, init_vals.init_velocity, init_vals.init_max_velocity, x_pos, float(i), init_vals.init_accel_param, init_vals.init_max_accel_param, init_vals.init_min_accel_param, init_vals.init_car_length, init_vals.init_horizon, init_vals.init_max_delta_turning_angle, init_vals.init_reaction_time, init_vals.init_time_step);
             x_pos = x_pos + new_car.get_length() + init_vals.init_car_spacing;
             road.add_car(new_car);
         }
@@ -225,7 +215,7 @@ void Experiment::main_loop(std::string experiment_file_name, bool multi_lane, bo
         // if event==true => wait until the event has started before checking experiment_finished()
     // otherwise loop until max_it
     while ( ( max_it==0 && ( ( event && experiment_start_it==-1 ) || !experiment_finished() ) )
-             || ( max_it!=1 && i<max_it ) ) {
+         || ( max_it!=0 && i<max_it ) ) {
         // Save results
         std::vector<std::vector<float>> iteration;
         for (Car &c : road.get_cars()) {
@@ -241,28 +231,30 @@ void Experiment::main_loop(std::string experiment_file_name, bool multi_lane, bo
         data.push_back(iteration);
 
         // Update positions (update after save so that we include the initial positions)
-        if ( road.update_car_decisions(time_step) == 1 ) { // Returns 1 upon starting of event
+        if ( road.update_car_decisions(time_step,i) == 1 ) { // Returns 1 upon starting of event
             experiment_start_it = i;
         }
         road.update_car_positions(time_step);
         i++;
     }
     
+    std::cout << "Count: " << road.get_cars().end()[-2].count << std::endl;
+    
     float time_taken = (i-experiment_start_it)*time_step;
     float road_length = road.get_road_length();
     if ( road_length == 0 ) {
         road_length = road.get_cars().back().get_x_pos_front_of_car();
     }
+    float iterations = max_it;
+    if ( iterations == 0 ) {
+        iterations = i-1;
+    }
     std::cout << "Time taken:" << std::endl;
     std::cout << time_taken << std::endl;
     write_results(experiment_file_name+"_results", road.get_cars().size(), time_taken);
     if ( multi_lane ) {
-        write_lane_changing_gif(data, road_length, max_it, experiment_file_name);
+        write_lane_changing_gif(data, road_length, iterations, experiment_file_name);
     } else {
-        if ( max_it == 0 ) {
-            write_space_time_Pbm(data, road_length, i-1, experiment_file_name);
-        } else {
-            write_space_time_Pbm(data, road_length, max_it, experiment_file_name);
-        }
+        write_space_time_Pbm(data, road_length, iterations, experiment_file_name);
     }
 }
