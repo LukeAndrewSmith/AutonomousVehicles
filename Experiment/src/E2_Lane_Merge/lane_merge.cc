@@ -2,8 +2,6 @@
 #include <tuple>
 #include <vector>
 #include <cmath>
-#include <algorithm>
-#include <cfloat>
 #include "model.hpp"
 #include "write_data.hpp"
 
@@ -17,60 +15,33 @@ TODO: Explanation
 int Car::update_decision(Road* road, float time_step, int iteration) {
     float car_ahead_pos = road->get_car_ahead_pos(x_pos);
     float safety_distance = 2*velocity; // 2[s] * speed in [m/s]
-    float diff = car_ahead_pos-get_x_pos_front_of_car();
-    int event_began = 0; // TODO: only call set to 1 once, at the beginning of the braking or at the end
-    float temp_accel_param = 0;
-    if ( ( id == 0 ) && ( road->get_begin_event()!=0 ) && ( x_pos > road->get_begin_event() ) && ( x_pos < road->get_begin_event()+40 ) ) {
-        temp_accel_param = min_accel_param;
-    } else if ( ( id == 0 ) && ( road->get_begin_event()!=0 ) && ( x_pos >= road->get_begin_event() + 40 ) && ( x_pos < road->get_begin_event()+80 ) )  {
-        event_began = 1; // Only indicate that event_began here so that the cars have time to react and slow down (otherwise if reaction_time>0 the condition road.cars_at_speed_limit() will be met immediately and the experiment will end the iteration after it started)
-        temp_accel_param = 0;
-    } else if ( diff <= safety_distance ) { // TODO: CHECK BRAKING
-        temp_accel_param = -velocity/diff;
-        temp_accel_param = std::max(min_accel_param,temp_accel_param);
-        
-//        float power = 1;
-//        temp_accel_param = -velocity/(std::pow(diff, power)) + velocity/(std::pow(safety_distance, power));
-//        temp_accel_param = std::max(min_accel_param,temp_accel_param);
-
-    } else if (velocity<road->get_speed_limit()) {
-        temp_accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
-        if ( temp_accel_param < 1e-4 ) {
-            temp_accel_param = 0;
+    float diff = car_ahead_pos-x_pos;
+    if ( x_pos < road->get_begin_event() ) {   // Before Lane Merging
+        if ( diff < safety_distance ) { // TODO: Smoother braking
+            accel_param = -velocity/diff;
+            accel_param = std::max(min_accel_param,accel_param);
+        } else { // TODO: Implement Accelerating to max road speed: new argument max_road_speed
+            accel_param = (1-(velocity/max_velocity))*max_accel_param;
+        }
+    } else if ( x_pos >= road->get_begin_event() && y_pos < 1 ) {  // Begin Lane Merging
+        y_target = 1;
+        float psi = atan( (y_target-y_pos)/(horizon - (car_length*cos(road_angle))) ) - road_angle;
+        float check = psi-turning_angle;
+        if ( check < -max_delta_turning_angle ) {
+            turning_angle = turning_angle - max_delta_turning_angle;
+        } else if ( abs(check) < max_delta_turning_angle ) {
+            turning_angle = psi;
+        } else if ( check > max_delta_turning_angle ) {
+            turning_angle = turning_angle + max_delta_turning_angle;
+        }
+        // TODO: Never actually gets to the other lane, this is cheating a bit
+        if ( y_target-y_pos<0.001 && turning_angle<10e-13 ) {
+            turning_angle = 0;
+            road_angle = 0;
+            y_pos = 1;
         }
     }
-    
-    if ( ( id == 1 ) && ( x_pos > road->get_begin_event()+80 ) ) {
-        if ( accel_param < 0 ) {
-            count++;
-        }
-    }
-    
-    
-    prev_car_ahead_x_pos = car_ahead_pos;
-
-    decision_buffer.push(temp_accel_param);
-    accel_param = decision_buffer.front();
-    decision_buffer.pop();
-        
-    return event_began;
-}
-
-// possible braking strategy
-//        accel_param = -velocity/diff;
-//        accel_param = std::max(min_accel_param,accel_param);
-        
-        // Here we make the assumption that the car was previously travelling at the same velocity as us
-//        float car_ahead_velocity = (car_ahead_pos-prev_car_ahead_x_pos)/time_step;
-//        accel_param = log((car_ahead_velocity/velocity))/time_step;
-//        std::cout << accel_param << std::endl;
-//        if ( accel_param > 0 ) accel_param = 0;
-//            accel_param = -velocity/diff;
-//            accel_param = std::max(min_accel_param,accel_param);
-//        }
-
-bool Experiment::experiment_finished() {
-    return road.cars_at_speed_limit();
+    return 0;
 }
 
 // Returns the number of the experiment
@@ -124,7 +95,7 @@ int main(int argc, char const *argv[]) {
     };
     
     Experiment concertina(init_vals);
-    std::string dir = "./Experiments/concertina";
+    std::string dir = "./Experiments/lane_change";
     int experiment_num;
     std::string experiment_name = get_file_name(dir,&experiment_num);
     std::string experiment_file_name = dir + "/" + experiment_name;
