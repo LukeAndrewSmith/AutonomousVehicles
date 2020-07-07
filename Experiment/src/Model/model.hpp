@@ -29,9 +29,17 @@ private:
     float reaction_time;                // [s]
     float last_reaction_it;
     std::queue<float> decision_buffer;  // acceleration_parameters offset by reaction time
+    int human;
+    bool l_merged;                      // Flag to check if the car to the left has merged ahead, used for the lange merging protocols
+    bool merging;                       // Flag to indicate that the current car is merging
+    bool merged;                        // Flag to check if this car has merged
+    bool accelerating;                  // Flag to indicate that the car should accelerate
+    float target_velocity_merge;              // AV slows down to a target velocity before lane merging
+    float target_velocity_merge_reached;
+    float starting_lane;
+    
 public:
-    int count;
-    Car(int id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_car_length, float init_horizon, float init_max_delta_turning_angle, float reaction_time, float time_step);
+    Car(int id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_car_length, float init_horizon, float init_max_delta_turning_angle, float reaction_time, float time_step, int human, float target_velocity_merge);
     int update_decision(Road* road, float time_step, int iteration);
     void update_position(float time_step);
     float get_x_pos();
@@ -40,6 +48,7 @@ public:
     float get_length();
     float get_accel_param();
     float get_velocity();
+    bool get_merged();
 };
 
 
@@ -59,10 +68,15 @@ private:
 public:
     Road();
     Road(int init_road_length, int speed_limit, int init_n_lanes, float begin_event);
-    float get_car_ahead_pos(float my_x_pos);
+    float get_car_ahead_pos(float my_x_pos, float my_y_pos);
+    float get_car_ahead_velocity(float car_ahead_x_pos, float car_ahead_y_pos);
+    float get_car_ahead_accel_param(float car_ahead_x_pos, float car_ahead_y_pos);
+    bool get_car_ahead_merged(float car_ahead_x_pos, float car_ahead_y_pos);
     float get_car_behind_pos(float my_x_pos);
-    // std::vector<float> get_car_ahead_pos_otherlane();
-    // std::vector<float> get_car_behind_pos_otherlane();
+    bool check_merging_space(float my_x_pos, float my_y_pos, float safety_distance, float car_length); //check_merging_space(float my_x_pos, float my_y_pos, float space_needed);
+    float get_car_ahead_pos_otherlane(float my_x_pos, float my_y_pos);
+    float get_car_behind_pos_otherlane(float my_x_pos, float my_y_pos);
+    float get_car_ahead_pos_anylane(float my_x_pos);
     int update_car_decisions(float time_step, int iteration);
     void update_car_positions(float time_step);
     void add_car(Car new_car);
@@ -91,6 +105,8 @@ struct init_experiment {
     float init_horizon;
     float init_max_delta_turning_angle;
     float init_reaction_time;
+    int init_human;
+    float init_target_velocity_merge;
     // Road
     int init_road_length;               // ( road_length == 0 ) => continue until experiment_finished()
                                         // and take road length to be the final x_pos of the front car
@@ -115,6 +131,6 @@ private:
     float time_step;      // Time passed in each iteration (should be small as we have made small angle approximations)
 public:
     Experiment(init_experiment init_vals);
-    void main_loop(std::string experiment_num, bool multi_lane, bool event); // event => whether braking/lane merging is happening
+    void main_loop(std::string experiment_num, bool multi_lane, bool event, int visualise); // event => whether braking/lane merging is happening
     bool experiment_finished();
 };

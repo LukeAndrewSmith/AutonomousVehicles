@@ -14,7 +14,7 @@
 /*                                  Car                                       */
 /*----------------------------------------------------------------------------*/
 /* Constructor */
-Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_car_length, float init_horizon, float init_max_delta_turning_angle, float init_reaction_time, float time_step) {
+Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_car_length, float init_horizon, float init_max_delta_turning_angle, float init_reaction_time, float time_step, int init_human, float init_target_velocity_merge) {
     id = init_id;
     velocity = init_velocity;
     max_velocity = init_max_velocity;
@@ -34,8 +34,15 @@ Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x
     reaction_time = init_reaction_time;
     last_reaction_it = 0;
     int n_its_delay = init_reaction_time/time_step;
-    for (int i=0; i<n_its_delay; i++) decision_buffer.push(0); // Initialise delay
-    count = 0;
+    for (int i=0; i<n_its_delay; i++) decision_buffer.push(0); // Initialise delay (reaction time)
+    human = init_human;
+    l_merged = false;
+    merging = false;
+    merged = false;
+    accelerating = false;
+    target_velocity_merge = init_target_velocity_merge;
+    target_velocity_merge_reached = false;
+    starting_lane = init_y_pos;
 }
 
 /*
@@ -54,6 +61,12 @@ void Car::update_position(float time_step) { // UPDATE_MOVEMENT
             velocity = max_velocity + (velocity-max_velocity)*exp(-accel_param*time_step);
         }
     } else {
+        // TODO: Check this acceleration technique
+        if ( accel_param < 0 ) {
+            velocity = velocity*exp(accel_param*time_step);
+        } else if ( accel_param > 0 ) {
+            velocity = max_velocity + (velocity-max_velocity)*exp(-accel_param*time_step);
+        }
         road_angle = road_angle + (((velocity*time_step)/car_length)*sin(turning_angle));
         x_pos = x_pos + (velocity*time_step*cos(turning_angle)*cos(road_angle));
         y_pos = y_pos + (velocity*time_step*cos(turning_angle)*sin(road_angle));
@@ -84,6 +97,10 @@ float Car::get_velocity() {
     return velocity;
 }
 
+bool Car::get_merged() {
+    return merged;
+}
+
 /*----------------------------------------------------------------------------*/
 /*                                  Road                                      */
 /*----------------------------------------------------------------------------*/
@@ -100,16 +117,50 @@ Road::Road(int init_road_length, int init_speed_limit, int init_n_lanes, float i
     begin_event = init_begin_event;
 }
 
-float Road::get_car_ahead_pos(float my_x_pos) {
+float Road::get_car_ahead_pos(float my_x_pos, float my_y_pos) {
     float car_ahead_x_pos = FLT_MAX; // std::numeric_limits<float>::max;
     for (Car c : cars) {
-        if (c.get_x_pos() > my_x_pos) { // Cars ahead
+        if (c.get_x_pos() > my_x_pos && abs(c.get_y_pos() - my_y_pos) < 0.5) { // Cars ahead  // previosuly: c.get_y_pos() == my_y_pos, now checks if car in the same lane, lane 0 or 1 => distance between my_y_pos and c.get_y_pos() needs to be less than 0.5
             if ( (c.get_x_pos() - my_x_pos) < (car_ahead_x_pos - my_x_pos) ) { // Update x_pos if closer
                 car_ahead_x_pos = c.get_x_pos();
             }
         }
     }
     return car_ahead_x_pos;
+}
+
+float Road::get_car_ahead_accel_param(float car_ahead_x_pos, float car_ahead_y_pos) {
+    float car_ahead_accel_param = 0;
+    for (Car c : cars) {
+        if ( (c.get_x_pos() == car_ahead_x_pos && c.get_y_pos() == car_ahead_y_pos) ) {
+            car_ahead_accel_param = c.get_accel_param();
+            break;
+        }
+    }
+    return car_ahead_accel_param;
+}
+
+float Road::get_car_ahead_velocity(float car_ahead_x_pos, float car_ahead_y_pos) {
+    float car_ahead_velocity = 0;
+    for (Car c : cars) {
+        if ( (c.get_x_pos() == car_ahead_x_pos && c.get_y_pos() == car_ahead_y_pos) ) {
+            car_ahead_velocity = c.get_velocity();
+            break;
+        }
+    }
+    return car_ahead_velocity;
+}
+
+bool Road::get_car_ahead_merged(float car_ahead_x_pos, float car_ahead_y_pos) {
+    float car_ahead_velocity = 0;
+    for (Car c : cars) {
+        if ( (c.get_x_pos() == car_ahead_x_pos && c.get_y_pos() == car_ahead_y_pos) ) {
+            car_ahead_velocity = c.get_merged();
+            break;
+        }
+    }
+    return car_ahead_velocity;
+    
 }
 
 float Road::get_car_behind_pos(float my_x_pos) {
@@ -124,17 +175,56 @@ float Road::get_car_behind_pos(float my_x_pos) {
     return x_pos;
 }
 
-// /*
-// */
-// std::vector<float> Road::get_car_ahead_pos_otherlane() {
-//   return std::vector<float>{0,0};
-// }
-//
-// /*
-// */
-// std::vector<float> Road::get_car_behind_pos_otherlane() {
-//   return std::vector<float>{0,0};
-// }
+//bool Road::check_merging_space(float my_x_pos, float my_y_pos, float space_needed) {
+//    float actual_space = get_car_ahead_pos_otherlane(my_x_pos, my_y_pos) - get_car_behind_pos_otherlane(my_x_pos, my_y_pos);
+//    if ( actual_space <= space_needed ) return false;
+//    return true;
+//}
+bool Road::check_merging_space(float my_x_pos, float my_y_pos, float safety_distance, float car_length) {
+    float ahead_space = get_car_ahead_pos_otherlane(my_x_pos, my_y_pos) - (my_x_pos + car_length);
+    float car_behind_pos = get_car_behind_pos_otherlane(my_x_pos, my_y_pos);
+    float behind_space = my_x_pos - car_behind_pos;
+    if ( ahead_space < safety_distance/2 || ( behind_space < safety_distance/2 && car_behind_pos != FLT_MAX ) ) return false; // TODO: NOTE: behind_space / 2 as often cars merge into less that safety distance
+    return true;
+}
+
+float Road::get_car_ahead_pos_otherlane(float my_x_pos, float my_y_pos) {
+    float other_y_pos = 1-my_y_pos;
+    float car_ahead_x_pos = FLT_MAX; // std::numeric_limits<float>::max;
+    for (Car c : cars) {
+        if (c.get_x_pos() >= my_x_pos && abs(c.get_y_pos() - other_y_pos) < 0.5) { // Cars ahead:  Checks if car in the same lane, lane 0 or 1 => distance between my_y_pos and c.get_y_pos() needs to be less than 0.5
+            if ( (c.get_x_pos() - my_x_pos) < (car_ahead_x_pos - my_x_pos) ) { // Update x_pos if closer
+                car_ahead_x_pos = c.get_x_pos();
+            }
+        }
+    }
+    return car_ahead_x_pos;
+}
+
+float Road::get_car_behind_pos_otherlane(float my_x_pos, float my_y_pos) {
+    float other_y_pos = 1-my_y_pos;
+    float car_behind_x_pos = FLT_MAX; // std::numeric_limits<float>::max;
+    for (Car c : cars) {
+        if (c.get_x_pos() <= my_x_pos && abs(c.get_y_pos() - other_y_pos) < 0.5) { // Cars ahead:  Checks if car in the same lane, lane 0 or 1 => distance between my_y_pos and c.get_y_pos() needs to be less than 0.5
+            if ( abs(c.get_x_pos() - my_x_pos) < abs(car_behind_x_pos - my_x_pos) ) { // Update x_pos if closer
+                car_behind_x_pos = c.get_x_pos();
+            }
+        }
+    }
+    return car_behind_x_pos;
+}
+
+float Road::get_car_ahead_pos_anylane(float my_x_pos) {
+    float car_ahead_x_pos = FLT_MAX; // std::numeric_limits<float>::max;
+    for (Car c : cars) {
+        if ( c.get_x_pos() > my_x_pos ) { // Cars ahead  // previosuly: c.get_y_pos() == my_y_pos, now checks if car in the same lane, lane 0 or 1 => distance between my_y_pos and c.get_y_pos() needs to be less than 0.5
+            if ( (c.get_x_pos() - my_x_pos) < (car_ahead_x_pos - my_x_pos) ) { // Update x_pos if closer
+                car_ahead_x_pos = c.get_x_pos();
+            }
+        }
+    }
+    return car_ahead_x_pos;
+}
 
 int Road::update_car_decisions(float time_step, int iteration) {
     int experiment_began = 0;
@@ -195,7 +285,7 @@ Experiment::Experiment(init_experiment init_vals) {
         x_pos = 0;
         for (int j=0; j<n_cars_per_lane; j++) {
             int id = n_cars_per_lane-j-1;       // Front car has id 0
-            Car new_car = Car(id, init_vals.init_velocity, init_vals.init_max_velocity, x_pos, float(i), init_vals.init_accel_param, init_vals.init_max_accel_param, init_vals.init_min_accel_param, init_vals.init_car_length, init_vals.init_horizon, init_vals.init_max_delta_turning_angle, init_vals.init_reaction_time, init_vals.init_time_step);
+            Car new_car = Car(id, init_vals.init_velocity, init_vals.init_max_velocity, x_pos, float(i), init_vals.init_accel_param, init_vals.init_max_accel_param, init_vals.init_min_accel_param, init_vals.init_car_length, init_vals.init_horizon, init_vals.init_max_delta_turning_angle, init_vals.init_reaction_time, init_vals.init_time_step, init_vals.init_human, init_vals.init_target_velocity_merge);
             x_pos = x_pos + new_car.get_length() + init_vals.init_car_spacing;
             road.add_car(new_car);
         }
@@ -204,7 +294,7 @@ Experiment::Experiment(init_experiment init_vals) {
 
 /*
 */
-void Experiment::main_loop(std::string experiment_file_name, bool multi_lane, bool event) {
+void Experiment::main_loop(std::string experiment_file_name, bool multi_lane, bool event, int visualise) {
     std::vector<std::vector<std::vector<float>>> data;  // 1st level of arrays = iterations
                                                         // For each iteration = list of cars
                                                         // For each car = array containing position
@@ -237,9 +327,7 @@ void Experiment::main_loop(std::string experiment_file_name, bool multi_lane, bo
         road.update_car_positions(time_step);
         i++;
     }
-    
-    std::cout << "Count: " << road.get_cars().end()[-2].count << std::endl;
-    
+        
     float time_taken = (i-experiment_start_it)*time_step;
     float road_length = road.get_road_length();
     if ( road_length == 0 ) {
@@ -252,9 +340,11 @@ void Experiment::main_loop(std::string experiment_file_name, bool multi_lane, bo
     std::cout << "Time taken:" << std::endl;
     std::cout << time_taken << std::endl;
     write_results(experiment_file_name+"_results", road.get_cars().size(), time_taken);
-    if ( multi_lane ) {
-        write_lane_changing_gif(data, road_length, iterations, experiment_file_name);
-    } else {
-        write_space_time_Pbm(data, road_length, iterations, experiment_file_name);
+    if ( visualise ) {
+        if ( multi_lane ) {
+            write_lane_changing_gif(data, road_length, iterations, experiment_file_name, road.get_begin_event());
+        } else {
+            write_space_time_Pbm(data, road_length, iterations, experiment_file_name);
+        }
     }
 }

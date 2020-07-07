@@ -46,7 +46,7 @@ void write_space_time_Pbm(const std::vector<std::vector<std::vector<float>>> &da
 /*----------------------------------------------------------------------------*/
 /*                              Multi Lane                                    */
 /*----------------------------------------------------------------------------*/
-void write_lane_changing_gif(const std::vector<std::vector<std::vector<float>>> &data, int road_length, int max_it, std::string filename){
+void write_lane_changing_gif(const std::vector<std::vector<std::vector<float>>> &data, int road_length, int max_it, std::string filename, float begin_event){
     
     int width = road_length;
     int height = 12; // 1 pixel = 1m
@@ -69,7 +69,7 @@ void write_lane_changing_gif(const std::vector<std::vector<std::vector<float>>> 
         std::vector<uint8_t> fullframe(full_len,255);
         
         // Draw Road
-        int full_width = width*4;
+        int full_width = width*4; // 4x as 4 contiguous elements containing colour info for each pixel
         // Outer lines
         auto start = fullframe.begin()+(outer_padding*full_width);
         std::fill( start, start+full_width, lane_colour );
@@ -81,6 +81,11 @@ void write_lane_changing_gif(const std::vector<std::vector<std::vector<float>>> 
         start = fullframe.begin()+((height/2)*full_width); //
         for (int i=0; i<full_width-line_len-line_gap; i=i+line_len+line_gap) {
             std::fill( start+i, start+i+line_len, lane_colour );
+        }
+        // Begin event
+        start = fullframe.begin()+(4*begin_event);
+        for (int i=0; i<height; i++) {
+            std::fill( start+(i*full_width), start+(i*full_width)+8, lane_colour );
         }
 
         // Draw cars
