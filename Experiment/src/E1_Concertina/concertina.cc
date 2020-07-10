@@ -28,55 +28,16 @@ int Car::update_decision(Road* road, float time_step, int iteration) {
     } else if ( diff <= safety_distance ) { // TODO: CHECK BRAKING
         temp_accel_param = -velocity/diff;
         temp_accel_param = std::max(min_accel_param,temp_accel_param);
-        
-//        float power = 1;
-//        temp_accel_param = -velocity/(std::pow(diff, power)) + velocity/(std::pow(safety_distance, power));
-//        temp_accel_param = std::max(min_accel_param,temp_accel_param);
 
     } else if ( velocity < road->get_speed_limit() ) {
         
+        // TODO: Previous attempts
         // ATTEMPT: Using car ahead's accel_param
-//        if ( car_ahead_pos == FLT_MAX ) { // No cars ahead, accelerate as much as possible
-//            temp_accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
-//        } else {
-//            temp_accel_param = std::max(0.0f, road->get_car_ahead_accel_param(car_ahead_pos));
-////            std::cout << temp_accel_param << std::endl;
-//        }
-//        if ( temp_accel_param < 1e-4 ) {
-//            temp_accel_param = 0;
-//        }
-        
-//        // ATTEMPT: Using car ahead's current velocity
-//        if ( car_ahead_pos == FLT_MAX ) { // No cars ahead, accelerate as much as possible
-//            temp_accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
-//        } else {
-//            float car_ahead_velocity = road->get_car_ahead_velocity(car_ahead_pos);
-//            float car_ahead_accel_param = road->get_car_ahead_accel_param(x_pos);
-//            float car_ahead_pos_next_it = x_pos + (max_velocity*time_step) + (((car_ahead_velocity-max_velocity)/car_ahead_accel_param)*(1-exp(-car_ahead_accel_param*time_step)) );
-//            float car_ahead_velocity_next_it = max_velocity + (car_ahead_velocity-max_velocity)*exp(-car_ahead_accel_param*time_step);
-//            float safety_distance_next_it = 2*car_ahead_velocity_next_it; // NOT OPTIMAL, SHOULD BE USING OUR OWN VELOCITY NEXT IT BUT WE DON'T KNOW IT YET, SO IT'S A SAFE ASSUMPTION
-//            float max_x_pos = car_ahead_pos_next_it - safety_distance_next_it - car_length;
-//
-//            float max_accel = (1-(velocity/road->get_speed_limit()))*max_accel_param; // Attempt maximum acceleration
-//            float test_x_pos = x_pos + (max_velocity*time_step) + ( ((velocity-max_velocity)/max_accel)*(1-exp(-max_accel*time_step)) );
-//
-//            if ( test_x_pos >= max_x_pos ) {
-//                float diff_x_pos = max_x_pos - x_pos;
-//                float max_velocity_next_it = diff_x_pos/time_step; // NOT OPTIMAL, AS
-//                temp_accel_param = std::log( (max_velocity_next_it - max_velocity) / (velocity-max_velocity) ) / -time_step;
-//            } else {
-//                temp_accel_param = max_accel;
-//            }
-//        }
-        
-        // TODO: Leave as this for now
         // ATTEMPT: Always setting to maximum velocity
+
+        // TODO: Leave as this for now
         temp_accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
-        
-        // Ensure convergence to 0 in reasonable time
-        if ( temp_accel_param < 1e-4 ) {
-            temp_accel_param = 0;
-        }
+        if ( at_target_velocity(road->get_speed_limit()) ) accel_param = 0; // Ensure convergence to 0 in reasonable time
     }
     
     prev_car_ahead_x_pos = car_ahead_pos;
@@ -87,19 +48,6 @@ int Car::update_decision(Road* road, float time_step, int iteration) {
         
     return event_began;
 }
-
-// possible braking strategy
-//        accel_param = -velocity/diff;
-//        accel_param = std::max(min_accel_param,accel_param);
-        
-        // Here we make the assumption that the car was previously travelling at the same velocity as us
-//        float car_ahead_velocity = (car_ahead_pos-prev_car_ahead_x_pos)/time_step;
-//        accel_param = log((car_ahead_velocity/velocity))/time_step;
-//        std::cout << accel_param << std::endl;
-//        if ( accel_param > 0 ) accel_param = 0;
-//            accel_param = -velocity/diff;
-//            accel_param = std::max(min_accel_param,accel_param);
-//        }
 
 bool Experiment::experiment_finished() {
     return road.cars_at_speed_limit();

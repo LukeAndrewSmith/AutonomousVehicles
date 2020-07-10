@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/zsh
 
 #  concertina.sh
 #  Autonomous-Vehicles

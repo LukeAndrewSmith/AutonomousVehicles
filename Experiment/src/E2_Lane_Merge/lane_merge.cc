@@ -3,8 +3,12 @@
 #include <vector>
 #include <cmath>
 #include <cfloat>
+#include <random>
 #include "model.hpp"
 #include "write_data.hpp"
+
+
+// Helpers
 
 void id_says(std::string to_say, int target_id, int id) {
     if ( id == target_id ) {
@@ -12,37 +16,65 @@ void id_says(std::string to_say, int target_id, int id) {
     }
 }
 
-//float fast_acceleration(float velocity, float speed_limit, float max_accel_param) {
-//    float tmp = (1-exp(-5*(speed_limit-velocity)))*max_accel_param;
-//    if ( tmp < 1e-4 ) {     // Ensure convergence to 0 in reasonable time
-//        tmp = 0;
-//    }
-//    return tmp;
-//}
-
-float fast_acceleration(float velocity, float speed_limit, float max_accel_param) {
-    float tmp = (1-(velocity/speed_limit))*max_accel_param;
-    temp_accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
-
-    if ( tmp < 1e-4 ) { // Ensure convergence to 0 in reasonable time
-        tmp = 0;
+// TODO: Check safety distance ahead doesn't include the length of the car!!!!!
+float Car::accelerate(Road* road, int car_ahead_id) {
+    float diff = road->get_car_pos_id(car_ahead_id)-x_pos;
+    float safety_distance = 2*velocity; // 2[s] * speed in [m/s]
+    float tmp;
+    if ( diff < safety_distance ) {
+        tmp = -velocity/diff;
+        tmp = std::max(min_accel_param,tmp);
+    } else {
+        tmp = (1-(velocity/road->get_speed_limit()))*max_accel_param;
     }
+    if ( at_target_velocity(road->get_speed_limit()) ) tmp = 0; // Ensure convergence to 0 in reasonable time
     return tmp;
 }
 
-//float fast_acceleration(float velocity, float speed_limit, float max_accel_param) {
-//    if (velocity < speed_limit) return max_accel_param;
-//    return 0;
-//}
+// TODO: Decision buffer not used for turning_angle
+void Car::merge() {
+    y_target = 1;
+    float psi = atan( (y_target-y_pos)/(horizon - (car_length*cos(road_angle))) ) - road_angle;
+    float check = psi-turning_angle;
+    if ( check < -max_delta_turning_angle ) {
+        turning_angle = turning_angle - max_delta_turning_angle;
+    } else if ( abs(check) < max_delta_turning_angle ) {
+        turning_angle = psi;
+    } else if ( check > max_delta_turning_angle ) {
+        turning_angle = turning_angle + max_delta_turning_angle;
+    }
+    if ( y_pos > 0.5 ) {                             // So that next cars can begin merging, indicate merged once in target lane (but not necessarily with y_pos == 1)
+        merged = true;
+    }
+    if ( in_target_lane() ) {                                           // Ensure convergence in reasonable time
+        turning_angle = 0;
+        road_angle = 0;
+        y_pos = 1;
+        merging = false;
+    }
+    
+}
 
-// original : accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
+bool Road::check_merging_space(int my_id, int id_ahead, int id_behind, float car_length) {
+    float safety_distance = 2*get_velocity_id(my_id);
+    float safety_distance_2 = 2*get_velocity_id(id_behind);
+    float ahead_space = get_car_pos_id(id_ahead) - get_car_pos_id(my_id);
+    float behind_space = get_car_pos_id(my_id) - get_car_pos_id(id_behind);
+    if ( ahead_space >= safety_distance && behind_space >= safety_distance_2 ) return true;
+    return false;
+}
 
-//                if ( diff < safety_distance ) { // TODO: Smoother braking
-//                    accel_param = -velocity/diff;
-//                    accel_param = std::max(min_accel_param,accel_param);
-//                } else { // TODO: Implement Accelerating to max road speed: new argument max_road_speed
-//                    accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
-//                }
+bool Experiment::experiment_finished() {
+//    std::cout << road.cars_at_speed_limit() <<  road.cars_in_lane_1() << std::endl;
+    return road.cars_at_speed_limit() && road.cars_in_lane_1();
+}
+
+int random_num(int lower, int upper) {
+    std::random_device rd;  // Will be used to obtain a seed for the random number engine
+    std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
+    std::uniform_int_distribution<> distrib(lower, upper);
+    return distrib(gen);
+}
 
 /*----------------------------------------------------------------------------*/
 /*                         Experiment Parameters                              */
@@ -51,97 +83,101 @@ float fast_acceleration(float velocity, float speed_limit, float max_accel_param
 update_decision
 TODO: Explanation
 */
+int check = 0;
 int Car::update_decision(Road* road, float time_step, int iteration) {
     float car_ahead_pos = road->get_car_ahead_pos(x_pos, y_pos);
     float car_ahead_merged = road->get_car_ahead_merged(car_ahead_pos, y_pos);
     float safety_distance = 2*velocity; // 2[s] * speed in [m/s]
     float diff = car_ahead_pos-x_pos;
-//    if ( x_pos < road->get_begin_event() ) {   // Before Lane Merging
-//        if ( diff < safety_distance ) { // TODO: Smoother braking
-//            accel_param = -velocity/diff;
-//            accel_param = std::max(min_accel_param,accel_param);
-//        } else { // TODO: Implement Accelerating to max road speed: new argument max_road_speed
-//            accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
-//        }
-//    } else
-    // TODO: Anything before event? -> currently the cars get too close together due to the event
-    if ( x_pos >= road->get_begin_event() ) { //}|| ( id > 1 && x_pos >= road->get_begin_event()-20 ) ) {                                        // Begin Lane Merging
-        if ( !human ) {                                                                     // Autonomous Vehicles Protocol:
-            if ( velocity > target_velocity_merge && !target_velocity_merge_reached ) {     // 1. Slow down to target_velocity
-                accel_param = -velocity/target_velocity_merge;
+    int event_began = 0;
+    float tmp_accel_param; // Only used for humans
+    // TODO: factor in safety_distance
+    // TODO: brake more efficiently, get better metric for seeing if at target velocity
+    if ( x_pos < road->get_begin_event() ) {   // Before Lane Merging
+        if ( !human ) {
+            int n_cars_per_lane = road->get_n_cars_per_lane();                          // Cars keep side by side before merging so both lanes follow the speed of the car in front in lane 0
+            int car_to_match_id;                                                        // See thesis for explanation TODO: Include explanation in thesis
+            if ( starting_lane == 0 ) car_to_match_id = id+1;
+            if ( starting_lane == 1 ) car_to_match_id = id-(n_cars_per_lane-1);
+            if ( id == n_cars_per_lane-1 || id == (2*n_cars_per_lane)-1 ) car_to_match_id = -1; // No cars ahead of front to vehicles
+            float diff_merging = road->get_car_pos_id(car_to_match_id)-x_pos;
+            if ( diff_merging < safety_distance ) {
+                accel_param = -(velocity/diff_merging);
                 accel_param = std::max(min_accel_param,accel_param);
-                if ( abs(velocity - target_velocity_merge) < 0.1 ) {                          // 1.1 Indicate slow down completed
+                accel_param = std::min(-0.001f,accel_param);
+            } else {
+                accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
+            }
+        } else if ( human ) {
+            if ( diff < safety_distance ) {
+                tmp_accel_param = -velocity/diff;
+                tmp_accel_param = std::max(min_accel_param,tmp_accel_param);
+            } else {
+                tmp_accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
+            }
+        }
+    } else if ( x_pos >= road->get_begin_event() ) {                                        // Begin Lane Merging
+        if ( !human ) {                                                                     // Autonomous Vehicles Protocol:
+            if ( id == road->get_cars().size() - 1 ) event_began = 1; // Indicate that the lane merge has begun so that main_loop() can begin testing for the ending condition of the experiment
+            if ( !target_velocity_merge_reached && velocity >= target_velocity_merge ) {    // 1. Everyong Slow down to target_velocity
+                accel_param = -velocity/target_velocity_merge;                              // Aim to slow down to target velocity
+                accel_param = std::max(min_accel_param,accel_param);
+                if ( abs(velocity - target_velocity_merge) < 0.1 ) {                        // 1.1 Indicate slow down completed
                     accel_param = 0;
                     target_velocity_merge_reached = true;
                 }
-            } else if ( merging ) {                                                         // 2. Merging, change lanes
-                y_target = 1;
-                float psi = atan( (y_target-y_pos)/(horizon - (car_length*cos(road_angle))) ) - road_angle;
-                float check = psi-turning_angle;
-                if ( check < -max_delta_turning_angle ) {
-                    turning_angle = turning_angle - max_delta_turning_angle;
-                } else if ( abs(check) < max_delta_turning_angle ) {
-                    turning_angle = psi;
-                } else if ( check > max_delta_turning_angle ) {
-                    turning_angle = turning_angle + max_delta_turning_angle;
-                }
-                if ( y_pos > 0.5 ) {                             // So that next cars can begin merging, indicate merged once in target lane (but not necessarily with y_pos == 1)
-                    merged = true;
-                }
-                // TODO: Never actually gets to the other lane, this is cheating a bit
-                if ( y_target-y_pos<0.001 && turning_angle<10e-13 ) {
-                    turning_angle = 0;
-                    road_angle = 0;
-                    y_pos = 1;
-                    merging = false;
-                }
-                // TODO: Accelerate during lane merge??
-                accel_param = fast_acceleration(velocity, road->get_speed_limit(), max_accel_param);
-            } else if ( ( merged || accelerating ) && velocity < road->get_speed_limit() ) {                    // 3. Finished merging, accelerate to speed limit
-                accel_param = fast_acceleration(velocity, road->get_speed_limit(), max_accel_param);
-            } else {                                                                        // 4. AV Decisions
-                // AV Merging protocol PROTOCOL
-                if ( starting_lane == 0 ) {                                                 // top lane == lane to merge from
-                    if ( car_ahead_pos == FLT_MAX && road->check_merging_space(x_pos, y_pos, safety_distance, car_length) ) { // No cars ahead
+            } else {
+                // Human Merging protocol PROTOCOL
+                if ( starting_lane == 0 ) {                                                 // 2. Top lane == lane to merge from
+                    int id_beside = id + road->get_n_cars_per_lane();
+                    // TODO: CHECK MERGING SPACE MAYBE INSTEAD???
+                    if ( !merged && !merging && car_ahead_pos == FLT_MAX && road->get_car_pos_id(id_beside)-x_pos > safety_distance ) { // 2.1 Begin merging
                         merging = true;
                     }
-                } else if ( starting_lane == 1 ) {                                          // bottom lane == lane to merge to
-                    if ( car_ahead_pos == FLT_MAX || ( road->get_car_ahead_pos_anylane(x_pos) - x_pos) > safety_distance ) {  // Space ahead
-                        accelerating = true;
-                    }
+                    if ( merging ) merge();                                                 // 2.2 Merging
+                    if ( merging || merged ) accel_param = accelerate(road, id_beside);
+                } else if ( starting_lane == 1 ) {                                           // bottom lane == lane to merge to
+                    int id_ahead_other_lane = id - road->get_n_cars_per_lane() + 1;
+                    if ( id_ahead_other_lane == road->get_n_cars_per_lane() ) id_ahead_other_lane = -1; // Front car should have invalid id as there aren't any cars ahead
+                    if ( !accelerating && ( car_ahead_pos == FLT_MAX || ( road->get_car_merging_id(id_ahead_other_lane) && road->get_car_pos_id(id_ahead_other_lane)-x_pos > safety_distance ) ) ) accelerating = true; // Space ahead
+                    if ( accelerating ) accel_param = accelerate(road, id_ahead_other_lane); // 3. Finished merging, accelerate to speed limit
                 }
             }
-            // TODO: factor in safety_distance during all of the above
-            // TODO: unused l_merged
-            // TODO: don't use circular road
-            // TODO: brake more efficiently, get better metric for seeing if at target velocity
-        } else { // Humans
-            
+        } else if ( human ) {                                                           // Humans
+            // TODO: Implement reaction time buffer for humans + overbraking
+            if ( id == road->get_cars().size() - 1 ) event_began = 1; // Indicate that the lane merge has begun so that main_loop() can begin testing for the ending condition of the experiment
+            if ( starting_lane == 0 ) {                                                 // top lane == lane to merge from
+                if ( !merging && !merged ) {   // Space => Merge
+                    int ahead_id = id+road->get_n_cars_per_lane()+1;                     // See thesis for explanation TODO: Include explanation in thesis
+                    int behind_id = id+road->get_n_cars_per_lane();
+                    if ( road->check_merging_space(id, ahead_id, behind_id, car_length) ) merging = true;
+                }
+                if ( merging ) merge();                                                         // 2. Merging, change lanes
+                int car_to_match_id = id+road->get_n_cars_per_lane()+1; // Else Match speed of car ahead other lane, See thesis for explanation TODO: Include explanation in thesis
+                tmp_accel_param = accelerate(road, car_to_match_id);
+            } else if ( starting_lane == 1 ) {                                           // bottom lane == lane to merge to
+                int car_ahead_id = id-road->get_n_cars_per_lane();                                  // See thesis for explanation TODO: Include explanation in thesis
+                if ( !road->get_car_merging_id(car_ahead_id) ) {
+                   if ( wait != 0 ) {
+                       wait--;
+                       if ( wait == 0 ) waited = true;
+                   } else if ( wait == 0 && !waited ) {
+                       wait = random_num(10,20);
+                   } else if ( wait == 0 && waited ) {
+                       tmp_accel_param = accelerate(road, car_ahead_id);
+                   }
+                } else {
+                    tmp_accel_param = accelerate(road, car_ahead_id);
+                }
+            }
         }
     }
-    return 0;
-}
-
-// Initial test
-//y_target = 1;
-//float psi = atan( (y_target-y_pos)/(horizon - (car_length*cos(road_angle))) ) - road_angle;
-//float check = psi-turning_angle;
-//if ( check < -max_delta_turning_angle ) {
-//    turning_angle = turning_angle - max_delta_turning_angle;
-//} else if ( abs(check) < max_delta_turning_angle ) {
-//    turning_angle = psi;
-//} else if ( check > max_delta_turning_angle ) {
-//    turning_angle = turning_angle + max_delta_turning_angle;
-//}
-//// TODO: Never actually gets to the other lane, this is cheating a bit
-//if ( y_target-y_pos<0.001 && turning_angle<10e-13 ) {
-//    turning_angle = 0;
-//    road_angle = 0;
-//    y_pos = 1;
-//}
-
-bool Experiment::experiment_finished() {
-    return road.cars_at_speed_limit();
+    if ( human ) {
+        decision_buffer.push(tmp_accel_param);
+        accel_param = decision_buffer.front();
+        decision_buffer.pop();
+    }
+    return event_began;
 }
 
 // Returns the number of the experiment
