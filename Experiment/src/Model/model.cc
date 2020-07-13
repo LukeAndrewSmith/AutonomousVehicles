@@ -6,9 +6,26 @@
 #include <queue>
 // #include <limits>
 #include <cfloat>
+#include <random>
 #include "model.hpp"
 #include "write_data.hpp"
 #include "visualisation.hpp"
+
+// Helpers
+int random_num(int lower, int upper) {
+    std::random_device rd;  // Will be used to obtain a seed for the random number engine
+    std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
+    std::uniform_int_distribution<> distrib(lower, upper);
+    return distrib(gen);
+}
+
+//float random_num_normal(float mean, float dev) {
+////    std::default_random_engine generator;
+//    std::random_device rd;  // Will be used to obtain a seed for the random number engine
+//    std::mt19937 generator(rd()); // Standard mersenne_twister_engine seeded with rd()
+//    std::normal_distribution<double> distribution(mean,dev);
+//    return distribution(generator);
+//}
 
 /*----------------------------------------------------------------------------*/
 /*                                  Car                                       */
@@ -23,17 +40,20 @@ Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x
     accel_param = init_accel_param;
     max_accel_param = init_max_accel_param;
     min_accel_param = init_min_accel_param;
-    prev_car_ahead_x_pos = FLT_MAX;
     car_length = init_car_length;
     y_target = init_y_pos; // We want to stay in the same lane at the beginning
     road_angle = 0;
     turning_angle = 0;
     horizon = init_horizon;
     max_delta_turning_angle = init_max_delta_turning_angle;
-    indicators = std::vector<bool>{false, false};
-    reaction_time = init_reaction_time;
-    last_reaction_it = 0;
-    int n_its_delay = init_reaction_time/time_step;
+    if ( init_reaction_time == -1 ) {
+        reaction_time = float(random_num(15, 35))/100; // Random reaction time on interval 0.15...0.35
+//        reaction_time = random_num_normal(1, 0.2); // Random reaction time on interval 0.15...0.35
+//        std::cout << reaction_time << std::endl;
+    } else {
+        reaction_time = init_reaction_time;
+    }
+    int n_its_delay = reaction_time/time_step;
     for (int i=0; i<n_its_delay; i++) decision_buffer.push(0); // Initialise delay (reaction time)
     human = init_human;
     merging = false;
@@ -46,10 +66,6 @@ Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x
     waited = false;
 }
 
-/*
-update_position
-TODO: Explanation
-*/
 void Car::update_position(float time_step) { // UPDATE_MOVEMENT
     if (road_angle == 0 && turning_angle == 0) {
         if ( accel_param == 0 ) {
@@ -110,9 +126,9 @@ int Car::get_id() {
     return id;
 }
 
-// TODO: Note: Arbitrary choices
 bool Car::at_target_velocity(float speed_limit) {
-    return abs(velocity-speed_limit) < 0.01;
+    // TODO: Note: 0.1 is an arbitrary choice
+    return abs(velocity-speed_limit) < 0.1;
 }
 
 bool Car::in_target_lane() {
@@ -192,16 +208,6 @@ float Road::get_car_behind_pos(float my_x_pos) {
     }
     return x_pos;
 }
-
-//bool Road::check_merging_space(float my_x_pos, float my_y_pos, float safety_distance, float car_length) {
-//    float safety_distance = 2*velocity;
-//    float ahead_space = get_car_ahead_or_next_to_pos_otherlane(my_x_pos, my_y_pos) - (my_x_pos + car_length);
-//    float car_behind_pos = get_car_behind_or_next_to_pos_otherlane(my_x_pos, my_y_pos);
-//    float behind_space = my_x_pos - car_behind_pos;
-////    if ( ahead_space < safety_distance/2 || ( behind_space < safety_distance/2 && car_behind_pos != FLT_MAX ) ) return false; // TODO: NOTE: behind_space / 2 as often cars merge into less that safety distance
-//    if ( ahead_space < safety_distance || ( behind_space < safety_distance_2 && car_behind_pos != FLT_MAX ) ) return false;
-//    return true;
-//}
 
 float Road::get_car_ahead_pos_otherlane(float my_x_pos, float my_y_pos) {
     float other_y_pos = 1-my_y_pos;
@@ -315,9 +321,8 @@ void Road::add_car(Car new_car) {
 }
 
 bool Road::cars_at_speed_limit() {
-    // Note, 0.025 is an arbitrary bound
-    if ( abs(cars.front().get_velocity()-speed_limit) > 0.025 ) return false;   // First car
-    if ( abs(cars.back().get_velocity()-speed_limit) > 0.025 ) return false;    // Last car
+    if ( !cars.front().at_target_velocity(speed_limit) ) return false;   // First car
+    if ( !cars.back().at_target_velocity(speed_limit) ) return false;    // Last car
     return true;
 }
 
@@ -370,7 +375,7 @@ Experiment::Experiment(init_experiment init_vals) {
         for (int j=0; j<n_cars_per_lane; j++) {
             int id = (i*n_cars_per_lane) + j;       // e.g lane 0: 0 1 2 3,    lane 1: 4 5 6 7
             Car new_car = Car(id, init_vals.init_velocity, init_vals.init_max_velocity, x_pos, float(i), init_vals.init_accel_param, init_vals.init_max_accel_param, init_vals.init_min_accel_param, init_vals.init_car_length, init_vals.init_horizon, init_vals.init_max_delta_turning_angle, init_vals.init_reaction_time, init_vals.init_time_step, init_vals.init_human, init_vals.init_target_velocity_merge);
-            x_pos = x_pos + new_car.get_length() + init_vals.init_car_spacing;
+            x_pos += new_car.get_length() + init_vals.init_car_spacing;
             road.add_car(new_car);
         }
     }

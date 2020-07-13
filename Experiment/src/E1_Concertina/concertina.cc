@@ -15,37 +15,32 @@ update_decision
 TODO: Explanation
 */
 int Car::update_decision(Road* road, float time_step, int iteration) {
-    float car_ahead_pos = road->get_car_ahead_pos(x_pos, y_pos);
+    int id_ahead = id+1;
+    float car_ahead_pos = road->get_car_pos_id(id_ahead);
     float safety_distance = 2*velocity; // 2[s] * speed in [m/s]
-    float diff = car_ahead_pos-get_x_pos_front_of_car();
+    float diff = car_ahead_pos-x_pos; // get_x_pos_front_of_car(); // TODO: Should use front of car for difference!!!!!!!!
     int event_began = 0; // TODO: only call set to 1 once, at the beginning of the braking or at the end
     float temp_accel_param = 0;
-    if ( ( id == 0 ) && ( road->get_begin_event()!=0 ) && ( x_pos > road->get_begin_event() ) && ( x_pos < road->get_begin_event()+40 ) ) {
+    if ( ( id == road->get_cars().size()-1 ) && ( road->get_begin_event()!=0 ) && ( x_pos > road->get_begin_event() ) && ( x_pos < road->get_begin_event()+40 ) ) {
         temp_accel_param = min_accel_param;
-    } else if ( ( id == 0 ) && ( road->get_begin_event()!=0 ) && ( x_pos >= road->get_begin_event() + 40 ) && ( x_pos < road->get_begin_event()+80 ) )  {
+    } else if ( ( id == road->get_cars().size()-1 ) && ( road->get_begin_event()!=0 ) && ( x_pos >= road->get_begin_event() + 40 ) && ( x_pos < road->get_begin_event()+80 ) )  {
         event_began = 1; // Only indicate that event_began here so that the cars have time to react and slow down (otherwise if reaction_time>0 the condition road.cars_at_speed_limit() will be met immediately and the experiment will end the iteration after it started)
         temp_accel_param = 0;
-    } else if ( diff <= safety_distance ) { // TODO: CHECK BRAKING
+    } else if ( diff < safety_distance ) { // TODO: CHECK BRAKING
         temp_accel_param = -velocity/diff;
         temp_accel_param = std::max(min_accel_param,temp_accel_param);
-
     } else if ( velocity < road->get_speed_limit() ) {
-        
-        // TODO: Previous attempts
-        // ATTEMPT: Using car ahead's accel_param
-        // ATTEMPT: Always setting to maximum velocity
-
-        // TODO: Leave as this for now
         temp_accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
-        if ( at_target_velocity(road->get_speed_limit()) ) accel_param = 0; // Ensure convergence to 0 in reasonable time
+        if ( at_target_velocity(road->get_speed_limit()) ) temp_accel_param = 0; // Ensure convergence to 0 in reasonable time
     }
     
-    prev_car_ahead_x_pos = car_ahead_pos;
-
     decision_buffer.push(temp_accel_param);
     accel_param = decision_buffer.front();
     decision_buffer.pop();
-        
+    
+    // TODO: If using higher reaction times the following is necessary
+//    if ( event_began && accel_param == 0 ) event_began = 0; // If the reaction time is slow enough, the braking decision might have finished being input into the buffer but not output, which means that the experiment ending conditions will be met and the experiment will end immediately, if this is the case delay until the first car has begun to slow down (i.e only indicate event began once the accel_param != 0)
+    
     return event_began;
 }
 

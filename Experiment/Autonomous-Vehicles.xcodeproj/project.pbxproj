@@ -30,6 +30,8 @@
 		0719995424545EF3005D9DD7 /* lane_merge.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = lane_merge.sh; sourceTree = "<group>"; };
 		07199955245476C3005D9DD7 /* gif.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = gif.hpp; sourceTree = "<group>"; };
 		07343871243A6DD2006386BC /* Autonomous-Vehicles */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "Autonomous-Vehicles"; sourceTree = BUILT_PRODUCTS_DIR; };
+		076557F324B8E523002E0D87 /* lane_merge_experiments.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = lane_merge_experiments.sh; sourceTree = "<group>"; };
+		076557F424B9C24D002E0D87 /* concertina_experiments.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = concertina_experiments.sh; sourceTree = "<group>"; };
 		0790E182243E00DF00E77959 /* concertina.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = concertina.cc; sourceTree = "<group>"; };
 		0790E184243E00DF00E77959 /* lane_merge.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = lane_merge.cc; sourceTree = "<group>"; };
 		07D8F653243DF52D00BAD4D3 /* concertina.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = concertina.sh; sourceTree = "<group>"; };
@@ -62,6 +64,8 @@
 				07F4C529243A6EDB0050E113 /* Makefile */,
 				07D8F653243DF52D00BAD4D3 /* concertina.sh */,
 				0719995424545EF3005D9DD7 /* lane_merge.sh */,
+				076557F324B8E523002E0D87 /* lane_merge_experiments.sh */,
+				076557F424B9C24D002E0D87 /* concertina_experiments.sh */,
 				07F4C51A243A6EDB0050E113 /* src */,
 				07343872243A6DD2006386BC /* Products */,
 			);

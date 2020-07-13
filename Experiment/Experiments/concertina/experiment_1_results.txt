@@ -1,2 +1,2 @@
-N cars: 20
-Time: 92.02
+N cars: 5
+Time: 50.72

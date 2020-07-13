@@ -26,8 +26,8 @@ float Car::accelerate(Road* road, int car_ahead_id) {
         tmp = std::max(min_accel_param,tmp);
     } else {
         tmp = (1-(velocity/road->get_speed_limit()))*max_accel_param;
+        if ( at_target_velocity(road->get_speed_limit()) ) tmp = 0; // Ensure convergence to 0 in reasonable time
     }
-    if ( at_target_velocity(road->get_speed_limit()) ) tmp = 0; // Ensure convergence to 0 in reasonable time
     return tmp;
 }
 
@@ -69,13 +69,6 @@ bool Experiment::experiment_finished() {
     return road.cars_at_speed_limit() && road.cars_in_lane_1();
 }
 
-int random_num(int lower, int upper) {
-    std::random_device rd;  // Will be used to obtain a seed for the random number engine
-    std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
-    std::uniform_int_distribution<> distrib(lower, upper);
-    return distrib(gen);
-}
-
 /*----------------------------------------------------------------------------*/
 /*                         Experiment Parameters                              */
 /*----------------------------------------------------------------------------*/
@@ -90,7 +83,7 @@ int Car::update_decision(Road* road, float time_step, int iteration) {
     float safety_distance = 2*velocity; // 2[s] * speed in [m/s]
     float diff = car_ahead_pos-x_pos;
     int event_began = 0;
-    float tmp_accel_param; // Only used for humans
+    float tmp_accel_param = 0; // Only used for humans
     // TODO: factor in safety_distance
     // TODO: brake more efficiently, get better metric for seeing if at target velocity
     if ( x_pos < road->get_begin_event() ) {   // Before Lane Merging
@@ -102,11 +95,11 @@ int Car::update_decision(Road* road, float time_step, int iteration) {
             if ( id == n_cars_per_lane-1 || id == (2*n_cars_per_lane)-1 ) car_to_match_id = -1; // No cars ahead of front to vehicles
             float diff_merging = road->get_car_pos_id(car_to_match_id)-x_pos;
             if ( diff_merging < safety_distance ) {
-                accel_param = -(velocity/diff_merging);
-                accel_param = std::max(min_accel_param,accel_param);
-                accel_param = std::min(-0.001f,accel_param);
+                tmp_accel_param = -(velocity/diff_merging);
+                tmp_accel_param = std::max(min_accel_param,tmp_accel_param);
+                tmp_accel_param = std::min(-0.001f,tmp_accel_param);                    // Ensure that if the cars are side by side the car brakes
             } else {
-                accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
+                tmp_accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
             }
         } else if ( human ) {
             if ( diff < safety_distance ) {
@@ -120,31 +113,29 @@ int Car::update_decision(Road* road, float time_step, int iteration) {
         if ( !human ) {                                                                     // Autonomous Vehicles Protocol:
             if ( id == road->get_cars().size() - 1 ) event_began = 1; // Indicate that the lane merge has begun so that main_loop() can begin testing for the ending condition of the experiment
             if ( !target_velocity_merge_reached && velocity >= target_velocity_merge ) {    // 1. Everyong Slow down to target_velocity
-                accel_param = -velocity/target_velocity_merge;                              // Aim to slow down to target velocity
-                accel_param = std::max(min_accel_param,accel_param);
+                tmp_accel_param = -velocity/target_velocity_merge;                              // Aim to slow down to target velocity
+                tmp_accel_param = std::max(min_accel_param,tmp_accel_param);
                 if ( abs(velocity - target_velocity_merge) < 0.1 ) {                        // 1.1 Indicate slow down completed
-                    accel_param = 0;
+                    tmp_accel_param = 0;
                     target_velocity_merge_reached = true;
                 }
             } else {
-                // Human Merging protocol PROTOCOL
+                // AV Merging protocol PROTOCOL
                 if ( starting_lane == 0 ) {                                                 // 2. Top lane == lane to merge from
                     int id_beside = id + road->get_n_cars_per_lane();
-                    // TODO: CHECK MERGING SPACE MAYBE INSTEAD???
                     if ( !merged && !merging && car_ahead_pos == FLT_MAX && road->get_car_pos_id(id_beside)-x_pos > safety_distance ) { // 2.1 Begin merging
                         merging = true;
                     }
                     if ( merging ) merge();                                                 // 2.2 Merging
-                    if ( merging || merged ) accel_param = accelerate(road, id_beside);
+                    if ( merging || merged ) tmp_accel_param = accelerate(road, id_beside);
                 } else if ( starting_lane == 1 ) {                                           // bottom lane == lane to merge to
                     int id_ahead_other_lane = id - road->get_n_cars_per_lane() + 1;
                     if ( id_ahead_other_lane == road->get_n_cars_per_lane() ) id_ahead_other_lane = -1; // Front car should have invalid id as there aren't any cars ahead
                     if ( !accelerating && ( car_ahead_pos == FLT_MAX || ( road->get_car_merging_id(id_ahead_other_lane) && road->get_car_pos_id(id_ahead_other_lane)-x_pos > safety_distance ) ) ) accelerating = true; // Space ahead
-                    if ( accelerating ) accel_param = accelerate(road, id_ahead_other_lane); // 3. Finished merging, accelerate to speed limit
+                    if ( accelerating ) tmp_accel_param = accelerate(road, id_ahead_other_lane); // 3. Finished merging, accelerate to speed limit
                 }
             }
         } else if ( human ) {                                                           // Humans
-            // TODO: Implement reaction time buffer for humans + overbraking
             if ( id == road->get_cars().size() - 1 ) event_began = 1; // Indicate that the lane merge has begun so that main_loop() can begin testing for the ending condition of the experiment
             if ( starting_lane == 0 ) {                                                 // top lane == lane to merge from
                 if ( !merging && !merged ) {   // Space => Merge
@@ -161,10 +152,22 @@ int Car::update_decision(Road* road, float time_step, int iteration) {
                    if ( wait != 0 ) {
                        wait--;
                        if ( wait == 0 ) waited = true;
+                       tmp_accel_param = accelerate(road, id+1);
                    } else if ( wait == 0 && !waited ) {
-                       wait = random_num(10,20);
+//                       wait = random_num(10,20);
+                       wait = random_num(100,400);
+                       tmp_accel_param = accelerate(road, id+1);
                    } else if ( wait == 0 && waited ) {
-                       tmp_accel_param = accelerate(road, car_ahead_id);
+                       int car_to_match_id = id-road->get_n_cars_per_lane();                     // See thesis for explanation TODO: Include explanation in thesis
+                       float diff_merging = road->get_car_pos_id(car_to_match_id)-x_pos;
+                       if ( diff_merging < safety_distance ) {
+                           tmp_accel_param = -(velocity/diff_merging);
+                           tmp_accel_param = std::max(min_accel_param,tmp_accel_param);  // min_accel_param/2 for more leisurly braking which is common when lane merging
+                           tmp_accel_param = std::min(-0.001f,tmp_accel_param);
+                       } else {
+                           tmp_accel_param = (1-(velocity/road->get_speed_limit()))*max_accel_param;
+                           if ( at_target_velocity(road->get_speed_limit()) ) tmp_accel_param = 0; // Ensure convergence to 0 in reasonable time
+                       }
                    }
                 } else {
                     tmp_accel_param = accelerate(road, car_ahead_id);
@@ -172,11 +175,11 @@ int Car::update_decision(Road* road, float time_step, int iteration) {
             }
         }
     }
-    if ( human ) {
-        decision_buffer.push(tmp_accel_param);
-        accel_param = decision_buffer.front();
-        decision_buffer.pop();
-    }
+    
+    decision_buffer.push(tmp_accel_param);
+    accel_param = decision_buffer.front();
+    decision_buffer.pop();
+    
     return event_began;
 }
 

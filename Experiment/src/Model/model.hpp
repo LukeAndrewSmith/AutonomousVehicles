@@ -1,11 +1,11 @@
 #include <queue> // TODO: Why is this needed and not <vector>???
+
+// Helpers
+int random_num(int lower, int upper);
+
 /*----------------------------------------------------------------------------*/
 /*                                  Car                                       */
 /*----------------------------------------------------------------------------*/
-/*
-Explanation of Car
-*/
-
 class Road; // Forward declaration of road as it is needed for 'update_decision(Road* road);' method
 
 class Car {
@@ -18,26 +18,24 @@ private:
     float accel_param;
     float max_accel_param;
     float min_accel_param;
-    float prev_car_ahead_x_pos;
     float car_length;
     float y_target;
-    float horizon;                      // TODO: To explain
+    float horizon;                      // distance ahead to aim for during lane change
     float road_angle;
     float turning_angle;
     float max_delta_turning_angle;
-    std::vector<bool> indicators;
     float reaction_time;                // [s]
-    float last_reaction_it;
     std::queue<float> decision_buffer;  // acceleration_parameters offset by reaction time
-    int human;
+    // Below used for lane merging protocol
+    int human;                          // Flag to indicate wether human or AV (human = 0 => AV, human = 1 => Human)
     bool merging;                       // Flag to indicate that the current car is merging
     bool merged;                        // Flag to check if this car has merged
     bool accelerating;                  // Flag to indicate that the car should accelerate
-    float target_velocity_merge;              // AV slows down to a target velocity before lane merging
-    float target_velocity_merge_reached;
-    float starting_lane;
+    float target_velocity_merge;        // AV slows down to a target velocity before lane merging
+    float target_velocity_merge_reached;// Flag to indicate that the target velocity has been reached
+    float starting_lane;                // The protocol is dependent on the starting lane of the vehicle
     float wait;                         // The human model waits a random time before letting someone into their lane during lane merging
-    bool waited;
+    bool waited;                        // Flag to indicate that the human model has waited
     
 public:
     Car(int id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_car_length, float init_horizon, float init_max_delta_turning_angle, float reaction_time, float time_step, int human, float target_velocity_merge);
@@ -52,19 +50,16 @@ public:
     int get_id();
     bool get_merged();
     bool get_merging();
-    bool at_target_velocity(float speed_limit);  // Checks if close enough
-    bool in_target_lane();      // Checks if close enough
-    float accelerate(Road* road, int car_ahead_id);
-    void merge();
+    bool at_target_velocity(float speed_limit);  // Checks if close enough to target velocity => speeds up convergence
+    bool in_target_lane();                       // Checks if close enough to target lane     => speeds up convergence
+    float accelerate(Road* road, int car_ahead_id);     // Calculates the next accel_param
+    void merge();                                       // Merges the car
 };
 
 
 /*----------------------------------------------------------------------------*/
 /*                                  Road                                      */
 /*----------------------------------------------------------------------------*/
-/*
-Explanation of Road
-*/
 class Road {
 private:
     int road_length;
@@ -80,7 +75,6 @@ public:
     float get_car_ahead_accel_param(float car_ahead_x_pos, float car_ahead_y_pos);
     bool get_car_ahead_merged(float car_ahead_x_pos, float car_ahead_y_pos);
     float get_car_behind_pos(float my_x_pos);
-//    bool check_merging_space(float my_x_pos, float my_y_pos, float safety_distance, float car_length); //check_merging_space(float my_x_pos, float my_y_pos, float space_needed);
     bool check_merging_space(int my_id, int id_ahead, int id_behind, float car_length);
     float get_car_ahead_pos_otherlane(float my_x_pos, float my_y_pos);
     float get_car_behind_pos_otherlane(float my_x_pos, float my_y_pos);
@@ -90,11 +84,11 @@ public:
     float get_car_pos_id(int id);
     float get_velocity_id(int id);
     bool get_car_merging_id(int id);
-    int update_car_decisions(float time_step, int iteration);
-    void update_car_positions(float time_step);
+    int update_car_decisions(float time_step, int iteration);   // Updates for all cars on the road
+    void update_car_positions(float time_step);                 // Updates for all cars on the road
     void add_car(Car new_car);
-    bool cars_at_speed_limit(); // Check if all the cars have equal velocities
-    bool cars_in_lane_1();      // Check if all the cars are in lane 1
+    bool cars_at_speed_limit();                                 // Check if all the cars are at the speed limit  (Experiment ending condition)
+    bool cars_in_lane_1();                                      // Check if all the cars are in lane 1           (Experiment ending condition)
     std::vector<Car> get_cars();
     int get_road_length();
     int get_speed_limit();
@@ -104,11 +98,9 @@ public:
 
 
 /*----------------------------------------------------------------------------*/
-/*                               Experiment                                   */
+/*                             Init Experiment                                */
 /*----------------------------------------------------------------------------*/
-/*
-Experiment init
-*/
+// Structure that contains all the initial parameters needed for an experiment
 struct init_experiment {
     // Car
     float init_velocity;                // All cars begin with the same velocity
@@ -123,20 +115,21 @@ struct init_experiment {
     int init_human;
     float init_target_velocity_merge;
     // Road
-    int init_road_length;               // ( road_length == 0 ) => continue until experiment_finished()
-                                        // and take road length to be the final x_pos of the front car
+    int init_road_length;               // ( road_length == 0 ) => continue until experiment_finished() and take road length to be the final x_pos of the front car
     int init_speed_limit;
     int init_n_lanes;
-    float init_begin_event;                  // ( begin_event < 0 ) => no event
+    float init_begin_event;             // ( begin_event < 0 ) => no event
     // Experiment
     float init_n_cars_per_lane;         // All lanes begin with the same number of cars
     int init_car_spacing;
     int init_max_it;                    // ( max_it == 0 ) => continue until experiment_finished()
     float init_time_step;
 };
-/*
-Explanation of Experiment
-*/
+
+
+/*----------------------------------------------------------------------------*/
+/*                               Experiment                                   */
+/*----------------------------------------------------------------------------*/
 class Experiment {
 private:
     Road road;
