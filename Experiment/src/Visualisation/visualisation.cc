@@ -46,7 +46,7 @@ void write_space_time_Pbm(const std::vector<std::vector<std::vector<float>>> &da
 /*----------------------------------------------------------------------------*/
 /*                              Multi Lane                                    */
 /*----------------------------------------------------------------------------*/
-void write_lane_changing_gif(const std::vector<std::vector<std::vector<float>>> &data, int road_length, int max_it, std::string filename, float begin_event){
+void write_lane_changing_gif(const std::vector<std::vector<std::vector<float>>> &data, int road_length, int max_it, std::string filename, float begin_event, float end_event){
     
     int width = road_length;
     int height = 12; // 1 pixel = 1m
@@ -84,6 +84,12 @@ void write_lane_changing_gif(const std::vector<std::vector<std::vector<float>>> 
         }
         // Begin event
         start = fullframe.begin()+(4*begin_event);
+        for (int i=0; i<height; i++) {
+            std::fill( start+(i*full_width), start+(i*full_width)+8, lane_colour );
+        }
+        
+        // Begin event
+        start = fullframe.begin()+(4*end_event);
         for (int i=0; i<height; i++) {
             std::fill( start+(i*full_width), start+(i*full_width)+8, lane_colour );
         }

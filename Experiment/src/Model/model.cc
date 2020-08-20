@@ -19,19 +19,18 @@ int random_num(int lower, int upper) {
     return distrib(gen);
 }
 
-//float random_num_normal(float mean, float dev) {
-////    std::default_random_engine generator;
-//    std::random_device rd;  // Will be used to obtain a seed for the random number engine
-//    std::mt19937 generator(rd()); // Standard mersenne_twister_engine seeded with rd()
-//    std::normal_distribution<double> distribution(mean,dev);
-//    return distribution(generator);
-//}
+float random_num_normal(float mean, float dev) {
+    std::random_device rd;  // Will be used to obtain a seed for the random number engine
+    std::mt19937 generator(rd()); // Standard mersenne_twister_engine seeded with rd()
+    std::normal_distribution<double> distribution(mean,dev);
+    return distribution(generator);
+}
 
 /*----------------------------------------------------------------------------*/
 /*                                  Car                                       */
 /*----------------------------------------------------------------------------*/
 /* Constructor */
-Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_car_length, float init_horizon, float init_max_delta_turning_angle, float init_reaction_time, float time_step, int init_human, float init_target_velocity_merge) {
+Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x_pos, float init_y_pos, float init_accel_param, float init_max_accel_param, float init_min_accel_param, float init_car_length, float init_horizon, float init_max_delta_turning_angle, float init_overreaction_brake_time, float init_overreaction_pause_time, float init_braking_strategy_multiplier, float time_step, int init_human) {
     id = init_id;
     velocity = init_velocity;
     max_velocity = init_max_velocity;
@@ -46,21 +45,31 @@ Car::Car(int init_id, float init_velocity, float init_max_velocity, float init_x
     turning_angle = 0;
     horizon = init_horizon;
     max_delta_turning_angle = init_max_delta_turning_angle;
-    if ( init_reaction_time == -1 ) {
-        reaction_time = float(random_num(15, 35))/100; // Random reaction time on interval 0.15...0.35
-//        reaction_time = random_num_normal(1, 0.2); // Random reaction time on interval 0.15...0.35
-//        std::cout << reaction_time << std::endl;
+    braking_strategy_multiplier = init_braking_strategy_multiplier;
+    overreacting = false;
+    overreaction_brake_iterations = std::max(0.0f,random_num_normal(init_overreaction_brake_time,0.1))/time_step;
+    overreaction_pause_iterations = std::max(0.0f,random_num_normal(init_overreaction_pause_time,0.1))/time_step;
+    overreaction_iterations = 0;
+    ovverreaction_count = std::vector<int>(3,0);
+    previous_accel_param = 0;
+    if ( init_human ) {
+        if ( random_num(1, 100) < 75 ) {
+            accel_start_proportion = float(random_num(300,400))/1000;
+        } else {
+            accel_start_proportion = float(random_num(100,200))/1000;
+        }
+            accel_max = float(random_num(1300,1400))/10000;
     } else {
-        reaction_time = init_reaction_time;
+        accel_start_proportion = 0.25;
+        accel_max = 0.14;
     }
-    int n_its_delay = reaction_time/time_step;
-    for (int i=0; i<n_its_delay; i++) decision_buffer.push(0); // Initialise delay (reaction time)
+    
+    starting_velocity_accel = 0;
+    event_iterations = 0;
     human = init_human;
     merging = false;
     merged = false;
     accelerating = false;
-    target_velocity_merge = init_target_velocity_merge;
-    target_velocity_merge_reached = false;
     starting_lane = init_y_pos;
     wait = 0;
     waited = false;
@@ -78,7 +87,6 @@ void Car::update_position(float time_step) { // UPDATE_MOVEMENT
             velocity = max_velocity + (velocity-max_velocity)*exp(-accel_param*time_step);
         }
     } else {
-        // TODO: Check this acceleration technique
         if ( accel_param < 0 ) {
             velocity = velocity*exp(accel_param*time_step);
         } else if ( accel_param > 0 ) {
@@ -126,9 +134,17 @@ int Car::get_id() {
     return id;
 }
 
-bool Car::at_target_velocity(float speed_limit) {
-    // TODO: Note: 0.1 is an arbitrary choice
-    return abs(velocity-speed_limit) < 0.1;
+std::vector<int> Car::get_ovvereaction_count() {
+    return ovverreaction_count;
+}
+
+
+bool Car::at_velocity(float speed_limit) {
+    return abs(velocity-speed_limit) < 0.1; // Note: 0.1 is an arbitrary choice but we'll probably never be exactly at the velocity as accel_param is set to 0 when were close
+}
+
+bool Car::greater_than_velocity(float target_velocity) {
+    return ( velocity > target_velocity );
 }
 
 bool Car::in_target_lane() {
@@ -144,20 +160,22 @@ bool Car::in_target_lane() {
   // TODO: This doesn't seem very clean to me...
 Road::Road() {}
 
-Road::Road(int init_road_length, int init_speed_limit, int init_n_lanes, float init_begin_event) {
+Road::Road(int init_road_length, int init_speed_limit, int init_speed_limit_after_merge, int init_n_lanes, float init_begin_event, float init_end_event, int init_av_only_merge_front, int init_n_iterations_event) {
     road_length = init_road_length;
     speed_limit = init_speed_limit;
+    speed_limit_after_merge = init_speed_limit_after_merge;
     n_lanes = init_n_lanes;
     begin_event = init_begin_event;
+    end_event = init_end_event;
+    av_only_merge_front = init_av_only_merge_front;
+    n_iterations_event = init_n_iterations_event;
 }
 
 float Road::get_car_ahead_pos(float my_x_pos, float my_y_pos) {
     float car_ahead_x_pos = FLT_MAX; // std::numeric_limits<float>::max;
     for (Car c : cars) {
         if (c.get_x_pos() > my_x_pos && abs(c.get_y_pos() - my_y_pos) < 0.5) { // Cars ahead  // previosuly: c.get_y_pos() == my_y_pos, now checks if car in the same lane, lane 0 or 1 => distance between my_y_pos and c.get_y_pos() needs to be less than 0.5
-            if ( (c.get_x_pos() - my_x_pos) < (car_ahead_x_pos - my_x_pos) ) { // Update x_pos if closer
-                car_ahead_x_pos = c.get_x_pos();
-            }
+            if ( (c.get_x_pos() - my_x_pos) < (car_ahead_x_pos - my_x_pos) ) car_ahead_x_pos = c.get_x_pos(); // Update x_pos if closer
         }
     }
     return car_ahead_x_pos;
@@ -302,10 +320,19 @@ bool Road::get_car_merging_id(int id) {
     return false;
 }
 
+bool Road::get_car_merged_id(int id) {
+    for (Car c : cars) {
+        if ( c.get_id() == id ) {
+            return c.get_merged();
+        }
+    }
+    return false;
+}
+
 int Road::update_car_decisions(float time_step, int iteration) {
     int experiment_began = 0;
     for (Car &c : cars) {
-        experiment_began = std::max(c.update_decision(this, time_step, iteration), experiment_began);
+        experiment_began = std::max(c.update_decision(this, time_step, iteration, n_iterations_event), experiment_began);
     }
     return experiment_began;
 }
@@ -321,14 +348,25 @@ void Road::add_car(Car new_car) {
 }
 
 bool Road::cars_at_speed_limit() {
-    if ( !cars.front().at_target_velocity(speed_limit) ) return false;   // First car
-    if ( !cars.back().at_target_velocity(speed_limit) ) return false;    // Last car
+    for ( Car c : cars ) {
+        if ( !c.greater_than_velocity(speed_limit_after_merge*0.95) ) return false; // Note: set to 95% of speed limit as velocities might fluctuate around the speed_limit rather than all cars being exactly at the speed limit and we don't want this to affect the experiments
+    }
     return true;
 }
 
 bool Road::cars_in_lane_1() {
     for ( Car c : cars ) {
         if ( c.get_y_pos() != 1 ) return false;
+    }
+    return true;
+}
+
+bool Road::cars_at_safety_distance() {
+    for ( Car c : cars ) {
+        float car_ahead_id = c.get_id() + 1;
+        float ahead_pos = get_car_pos_id(car_ahead_id);
+        float my_pos = c.get_y_pos()+c.get_length();
+        if ( ahead_pos-my_pos < 2*c.get_velocity() ) return false;
     }
     return true;
 }
@@ -346,8 +384,20 @@ int Road::get_speed_limit() {
     return speed_limit;
 }
 
+int Road::get_speed_limit_after_merge() {
+    return speed_limit_after_merge;
+}
+
 int Road::get_begin_event() {
     return begin_event;
+}
+
+int Road::get_end_event() {
+    return end_event;
+}
+
+int Road::get_av_only_merge_front() {
+    return av_only_merge_front;
 }
 
 int Road::get_n_cars_per_lane() {
@@ -362,7 +412,7 @@ int Road::get_n_cars_per_lane() {
 /* Constructor */
 Experiment::Experiment(init_experiment init_vals) {
     // Road
-    road = Road(init_vals.init_road_length, init_vals.init_speed_limit, init_vals.init_n_lanes, init_vals.init_begin_event);
+    road = Road(init_vals.init_road_length, init_vals.init_speed_limit, init_vals.init_speed_limit_after_merge, init_vals.init_n_lanes, init_vals.init_begin_event, init_vals.init_end_event, init_vals.init_av_only_merge_front, init_vals.init_n_iterations_event);
     // Experiment
     n_cars_per_lane = init_vals.init_n_cars_per_lane; // n_cars_per_lane[0] = #cars in lane at lanes[0]
     car_spacing = init_vals.init_car_spacing;
@@ -373,8 +423,8 @@ Experiment::Experiment(init_experiment init_vals) {
     for (int i=0; i<init_vals.init_n_lanes; i++) {
         x_pos = 0;
         for (int j=0; j<n_cars_per_lane; j++) {
-            int id = (i*n_cars_per_lane) + j;       // e.g lane 0: 0 1 2 3,    lane 1: 4 5 6 7
-            Car new_car = Car(id, init_vals.init_velocity, init_vals.init_max_velocity, x_pos, float(i), init_vals.init_accel_param, init_vals.init_max_accel_param, init_vals.init_min_accel_param, init_vals.init_car_length, init_vals.init_horizon, init_vals.init_max_delta_turning_angle, init_vals.init_reaction_time, init_vals.init_time_step, init_vals.init_human, init_vals.init_target_velocity_merge);
+            int id = (i*n_cars_per_lane) + j;       // e.g lane 0: 0 1 2 3 4,    lane 1: 5 6 7 8 9
+            Car new_car = Car(id, init_vals.init_velocity, init_vals.init_max_velocity, x_pos, float(i), init_vals.init_accel_param, init_vals.init_max_accel_param, init_vals.init_min_accel_param, init_vals.init_car_length, init_vals.init_horizon, init_vals.init_max_delta_turning_angle, init_vals.init_overreaction_brake_time, init_vals.init_overreaction_pause_time, init_vals.init_braking_strategy_multiplier, init_vals.init_time_step, init_vals.init_human);
             x_pos += new_car.get_length() + init_vals.init_car_spacing;
             road.add_car(new_car);
         }
@@ -394,7 +444,7 @@ void Experiment::main_loop(std::string experiment_file_name, bool multi_lane, bo
         // if event==true => wait until the event has started before checking experiment_finished()
     // otherwise loop until max_it
     while ( ( max_it==0 && ( ( event && experiment_start_it==-1 ) || !experiment_finished() ) )     // Experiment not finished
-         || ( max_it!=0 && i<max_it ) ) {
+           || ( max_it!=0 && i<max_it && ( ( event && experiment_start_it==-1 ) || !experiment_finished() ) ) ) {
 //        std::cout << i << std::endl;
         // Save results
         std::vector<std::vector<float>> iteration;
@@ -417,22 +467,30 @@ void Experiment::main_loop(std::string experiment_file_name, bool multi_lane, bo
         road.update_car_positions(time_step);
         i++;
     }
+    
+    // For printing over-braking count (Number of times the cars overbraking) to check validity of model
+//    for ( Car c : road.get_cars() ) {
+//        std::cout << c.get_id() << ": " << c.get_ovvereaction_count()[0] << ", " << c.get_ovvereaction_count()[1] << ", " << c.get_ovvereaction_count()[2] << std::endl;
+//    }
         
     float time_taken = (i-experiment_start_it)*time_step;
     float road_length = road.get_road_length();
     if ( road_length == 0 ) {
-        road_length = road.get_cars().back().get_x_pos_front_of_car();
+        road_length = 0;
+        for ( Car c : road.get_cars() ) {
+            if ( c.get_x_pos_front_of_car() > road_length ) road_length = c.get_x_pos_front_of_car();
+        }
+//        road_length = road.get_cars().back().get_x_pos_front_of_car();
+//        std::cout << "Length parcouru: " << road_length-road.get_begin_event() << std::endl;
     }
-    float iterations = max_it;
-    if ( iterations == 0 ) {
-        iterations = i-1;
-    }
-    std::cout << "Time taken:" << std::endl;
-    std::cout << time_taken << std::endl;
+    float iterations = i-1;
+
+//    std::cout << "Time taken:" << std::endl;
+    std::cout << time_taken << ", "; // << std::endl;
     write_results(experiment_file_name+"_results", road.get_cars().size(), time_taken);
     if ( visualise ) {
         if ( multi_lane ) {
-            write_lane_changing_gif(data, road_length, iterations, experiment_file_name, road.get_begin_event());
+            write_lane_changing_gif(data, road_length, iterations, experiment_file_name, road.get_begin_event(), road.get_end_event());
         } else {
             write_space_time_Pbm(data, road_length, iterations, experiment_file_name);
         }
