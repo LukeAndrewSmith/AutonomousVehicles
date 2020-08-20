@@ -76,10 +76,6 @@ do
 done
 
 
-#!!!!!!!!!!!!!!!!!!!
-# TODO: Currently proving conclusion
-# When the cars are as close together as possible, the benifit of the autonomous vehicle is minimal as the concertina will propagate back. The AV comes into it's own however when the vehicle density is greater than the minimum as the AV is able to resolve the concertina before it propagates back.
-
 # Based on the above experiment I have chosen 10m spacing as it has a nice threashold, we will now look at the varying number of cars
 EXTRA_SPACING=10
 CAR_SPACING=$(( 2*$VELOCITY + $EXTRA_SPACING ))
